@@ -3,24 +3,25 @@
  * @returns { Promise<void> }
  */
 exports.up = function (knex) {
-    return knex.schema.createTable('drivers', (table) => {
+    return knex.schema.createTable('conductors', (table) => {
 
-        table.increments('driver_id').primary();
+        table.increments('conductor_id').primary();
 
-        table.string('full_name').notNullable();
-
-        table.string('phone')
-            .notNullable()
-            .unique();
+        table.string('full_name')
+            .notNullable();
 
         table.string('nic')
             .notNullable()
             .unique();
 
+        table.string('phone')
+            .notNullable()
+            .unique();
+
         table.string('photo_url');
 
-        table.string('password_hash')
-            .notNullable();
+        table.string('status')
+            .defaultTo('active');
 
         table.timestamp('created_at')
             .defaultTo(knex.fn.now());
@@ -33,5 +34,5 @@ exports.up = function (knex) {
  * @returns { Promise<void> }
  */
 exports.down = function (knex) {
-    return knex.schema.dropTableIfExists('drivers');
+    return knex.schema.dropTableIfExists('conductors');
 };
