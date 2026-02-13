@@ -1,6 +1,6 @@
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config({ path: '../.env'});
 
-const { knexSnakeCaseMappers } = require('objection');
+const { knexSnakecaseMappers } = require('objection');
 
 
 module.exports = {
@@ -25,8 +25,12 @@ module.exports = {
 
     seeds: {
       directory: './seeds',
-    },
+    }
 
-    ...knexSnakeCaseMappers(),
+
+    
+
+
+      .directory.at.knexSnakecaseMappers,
   }
 };
