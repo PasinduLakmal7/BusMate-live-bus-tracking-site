@@ -18,9 +18,9 @@ exports.up = function (knex) {
         table.boolean('active_status')
             .defaultTo(true);
 
-        table.decimal('total_distance', 8, 2); // km
+        table.decimal('total_distance', 8, 2);
 
-        table.integer('estimated_duration'); // minutes
+        table.integer('estimated_duration');
 
         table.timestamp('created_at')
             .defaultTo(knex.fn.now());
