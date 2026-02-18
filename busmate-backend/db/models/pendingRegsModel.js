@@ -27,6 +27,7 @@ class PendingRegistration extends Model {
                 'full_name',
                 'phone',
                 'nic',
+                'email',
                 'password_hash',
                 'license_number',
                 'license_expiry',
@@ -39,6 +40,7 @@ class PendingRegistration extends Model {
                 full_name: { type: 'string', minLength: 3, maxLength: 120 },
                 phone: { type: 'string', minLength: 9, maxLength: 20 },
                 nic: { type: 'string', minLength: 8, maxLength: 20 },
+                email: { type: 'string', format: 'email', maxLength: 100 },
                 password_hash: { type: 'string', minLength: 20 },
                 driver_photo_url: { type: ['string', 'null'], maxLength: 500 },
 

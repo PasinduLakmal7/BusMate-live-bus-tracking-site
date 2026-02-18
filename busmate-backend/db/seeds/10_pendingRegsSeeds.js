@@ -18,6 +18,7 @@ exports.seed = async function (knex) {
       full_name: `Pending Driver ${i}`,
       phone: `07590000${i.toString().padStart(2, '0')}`,
       nic: `1993${i.toString().padStart(2, '0')}45678${i}`,
+      email: `pending_driver${i}@busmate.com`,
       password_hash: passwordHash,
       driver_photo_url: `https://example.com/pending_driver${i}.jpg`,
 

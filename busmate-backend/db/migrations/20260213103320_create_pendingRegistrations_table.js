@@ -7,6 +7,7 @@ exports.up = function (knex) {
         table.string('full_name').notNullable();
         table.string('phone').notNullable().unique();
         table.string('nic').notNullable().unique();
+        table.string('email').notNullable().unique();
         table.string('password_hash').notNullable();
         table.string('driver_photo_url');
 
