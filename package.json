@@ -22,5 +22,8 @@
   "bugs": {
     "url": "https://github.com/PasinduLakmal7/busmate-live-bus-tracking/issues"
   },
-  "homepage": "https://github.com/PasinduLakmal7/busmate-live-bus-tracking#readme"
+  "homepage": "https://github.com/PasinduLakmal7/busmate-live-bus-tracking#readme",
+  "dependencies": {
+    "ioredis": "^5.9.3"
+  }
 }
