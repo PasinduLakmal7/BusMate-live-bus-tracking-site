@@ -16,6 +16,12 @@ const memoryThrottle = new Map();
 module.exports = function initSocketServer(io) {
     // ── Auth middleware ───────────────────────────────────────────────────────
     io.use((socket, next) => {
+        const isAdmin = socket.handshake.auth?.admin || socket.handshake.query?.admin === 'true';
+        if (isAdmin) {
+            socket.isAdmin = true;
+            return next();
+        }
+
         const token = socket.handshake.auth && socket.handshake.auth.token;
         if (!token) return next(new Error('Authentication error: token missing'));
         try {
@@ -33,6 +39,16 @@ module.exports = function initSocketServer(io) {
 
     // ── Connection handler ────────────────────────────────────────────────────
     io.on('connection', (socket) => {
+        if (socket.isAdmin) {
+            console.log('[socket] Admin frontend connected');
+            socket.join('admin');
+
+            socket.on('disconnect', () => {
+                console.log('[socket] Admin frontend disconnected');
+            });
+            return;
+        }
+
         const { id: driverId, busId, routeId } = socket.driver || {};
 
         if (routeId) socket.join(`route:${routeId}`);
@@ -41,9 +57,13 @@ module.exports = function initSocketServer(io) {
 
         socket.on('location:update', async (data) => {
             try {
+                console.log(`[socket] Received location:update from driver=${driverId}`, data);
                 const lat = parseFloat(data.lat);
                 const lon = parseFloat(data.lon);
-                if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+                if (Number.isNaN(lat) || Number.isNaN(lon)) {
+                    console.log('[socket] Invalid coordinates, returning.');
+                    return;
+                }
 
                 const pos = {
                     driverId: driverId || null,
@@ -70,10 +90,11 @@ module.exports = function initSocketServer(io) {
                         .catch(err => console.error('[Redis] GEO update failed:', err.message));
                 }
 
-                // ── 3. Broadcast to route room ────────────────────────────────
+                // ── 3. Broadcast to route room and admin room ─────────────────
                 if (pos.routeId) {
                     io.to(`route:${pos.routeId}`).emit('bus:location', pos);
                 }
+                io.to('admin').emit('bus:location', pos);
 
                 // ── 4. Throttled persistent update to PostgreSQL ─────────────
                 if (pos.busId) {

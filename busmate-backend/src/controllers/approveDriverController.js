@@ -1,17 +1,7 @@
 const pool = require('../../db.js');
-const Redis = require('ioredis');
+const { redis } = require('../utils/redisClient');
 const bcrypt = require('bcrypt');
 const twilio = require('twilio');
-
-const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
-    maxRetriesPerRequest: 1, // Don't block the thread if Redis is down
-    retryStrategy: (times) => null // Don't retry automatically
-});
-
-// Log Redis errors but don't crash
-redis.on('error', (err) => {
-    console.warn('⚠️ Redis connection error:', err.message);
-});
 
 async function sendSmsOtp(phone, otp) {
     // If Twilio is configured, send SMS; otherwise log the OTP
@@ -64,34 +54,15 @@ const approveDriver = async (req, res) => {
         console.log('--- Attempting to insert into drivers ---');
         const insertDriver = await pool.query(
             `INSERT INTO drivers (
-                full_name, phone, nic, photo_url, email, 
-                license_number, license_expiry, bus_number, bus_type, 
-                conductor_name, conductor_phone, conductor_nic, conductor_photo_url,
-                route_number, route_name, depot_name, license_photo_url, trips_json,
-                password_hash, created_at
+                full_name, phone, nic, photo_url, password_hash
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING driver_id`,
+            VALUES ($1,$2,$3,$4,$5) RETURNING driver_id`,
             [
                 p.full_name,
                 p.phone,
                 p.nic,
                 p.driver_photo_url || null,
-                p.email || null,
-                p.license_number || null,
-                p.license_expiry ? new Date(p.license_expiry).toISOString().split('T')[0] : null,
-                p.bus_number || null,
-                p.bus_type || null,
-                p.conductor_name || null,
-                p.conductor_phone || null,
-                p.conductor_nic || null,
-                p.conductor_photo_url || null,
-                p.route_number || null,
-                p.route_name || null,
-                p.depot_name || null,
-                p.license_photo_url || null,
-                p.trips_json ? JSON.stringify(p.trips_json) : null,
-                p.password_hash,
-                new Date(),
+                p.password_hash
             ]
         );
 

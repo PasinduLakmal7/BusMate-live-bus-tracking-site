@@ -18,19 +18,34 @@ dbSetup();
 
 const io = new Server(server, {
     cors: {
-        origin: 'http://localhost:5173',
-        credentials: true,
+        origin: '*',
+        credentials: false,
     }
 });
 
 const Redis = require('ioredis');
 const initSocketServer = require('./src/sockets/socketServer');
-const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
+const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+    lazyConnect: true,
+    maxRetriesPerRequest: 0,
+    enableOfflineQueue: false,
+    retryStrategy: (times) => {
+        if (times > 3) return null; // stop retrying after 3 attempts
+        return Math.min(times * 500, 2000);
+    },
+});
+redis.on('error', (err) => {
+    // Suppress Redis errors — registration/approval endpoints don't need Redis
+    if (process.env.NODE_ENV !== 'production') {
+        console.warn('⚠️ Redis unavailable (sockets/OTP disabled):', err.message);
+    }
+});
 
 app.use(helmet());
 app.use(cors({
-    origin: "http://localhost:5173",
-    credentials: true
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 app.use(express.json());
 
@@ -66,6 +81,6 @@ app.get('/routes/:routeId/positions', async (req, res) => {
     }
 });
 
-server.listen(4000, () => {
-    console.log('Server is running on port 4000');
+server.listen(4000, '0.0.0.0', () => {
+    console.log('Server is running on port 4000 (IPv4 + IPv6)');
 });
