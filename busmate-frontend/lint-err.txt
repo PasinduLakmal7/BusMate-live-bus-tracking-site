@@ -1,0 +1,39 @@
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\components\Auth\Login.jsx
+  36:24  error  'error' is defined but never used  no-unused-vars
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\components\Auth\SignUp.jsx
+  34:28  error  'error' is defined but never used  no-unused-vars
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\main.jsx
+  2:10  error  'createRoot' is defined but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\Alerts.jsx
+  64:25  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\BusDetails.jsx
+  85:36  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\BusStopDetails.jsx
+  11:26  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\CrowdStatus.jsx
+  43:37  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\Favorites.jsx
+  80:32  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\HelpSupport.jsx
+  83:31  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\LiveTracking.jsx
+  11:9  error  'activeBuses' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\SmartPredictions.jsx
+  61:33  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+E:\Semester 3\Web develepment\BusMate site\BUSMATE DEV\busmate-frontend\src\pages\UserDashboard.jsx
+  128:29  error  Parsing error: Expecting Unicode escape sequence \uXXXX
+
+✖ 12 problems (12 errors, 0 warnings)
+

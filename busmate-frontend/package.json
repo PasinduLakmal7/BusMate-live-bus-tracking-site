@@ -19,6 +19,7 @@
     "firebase": "^12.9.0",
     "formik": "^2.4.9",
     "framer-motion": "^12.33.0",
+    "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0",
