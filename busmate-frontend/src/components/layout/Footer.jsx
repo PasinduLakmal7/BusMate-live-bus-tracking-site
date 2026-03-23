@@ -6,9 +6,9 @@ import logo from '../../assets/logo.png';
 const Footer = () => {
   return (
     <footer className="bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 pt-10 pb-6 mt-auto">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-          
+
           {/* Brand & description */}
           <div className="col-span-1 md:col-span-1">
             <Link to="/" className="flex items-center gap-2 group mb-4">
@@ -62,7 +62,7 @@ const Footer = () => {
         {/* Bottom bar */}
         <div className="pt-6 border-t border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-gray-400 text-sm text-center md:text-left">
-            © {new Date().getFullYear()} BusMate Tracking System. All rights reserved.
+            © {new Date().getFullYear()} BusMate © 2026 • Powered by QuadNova. All rights reserved.
           </p>
           <div className="flex gap-6 text-sm text-gray-500 dark:text-gray-400">
             <Link to="#" className="hover:text-gray-900 transition-colors">Privacy Policy</Link>

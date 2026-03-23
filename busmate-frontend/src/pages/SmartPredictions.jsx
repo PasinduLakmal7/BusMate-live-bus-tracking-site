@@ -4,7 +4,7 @@ import Card from '../components/common/Card';
 
 const SmartPredictions = () => {
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16">
+    <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16">
       
       {/* Header */}
       <div className="bg-gradient-to-r from-indigo-900 to-purple-900 rounded-3xl p-8 mb-8 text-white relative overflow-hidden shadow-xl">

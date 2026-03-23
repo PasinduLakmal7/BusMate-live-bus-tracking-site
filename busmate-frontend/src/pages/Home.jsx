@@ -20,7 +20,7 @@ const Home = () => {
         <div className="absolute inset-0 bg-gradient-to-t from-gray-900/90 via-gray-900/30 to-blue-900/20"></div>
         <div className="absolute inset-0 bg-blue-800/10 mix-blend-overlay"></div>
 
-        <div className="max-w-7xl mx-auto relative z-10 flex flex-col items-center text-center w-full drop-shadow-lg">
+        <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto relative z-10 flex flex-col items-center text-center w-full drop-shadow-lg">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 text-white drop-shadow-2xl">
             Where are you going?
           </h1>
@@ -41,7 +41,7 @@ const Home = () => {
         </div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-20">
+      <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-20">
 
         {/* Quick Actions Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">

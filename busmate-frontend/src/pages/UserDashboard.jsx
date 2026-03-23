@@ -21,7 +21,7 @@ const UserDashboard = () => {
   };
   
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16 pb-20">
+    <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16 pb-20">
       
       {/* Profile Header */}
       <div className="bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-900 rounded-3xl p-6 sm:p-10 mb-8 text-white shadow-xl relative overflow-hidden">
