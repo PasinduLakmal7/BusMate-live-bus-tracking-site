@@ -25,13 +25,10 @@ module.exports = {
 
     seeds: {
       directory: './seeds',
-    }
+    },
 
-
-
-
-
-      .directory.at.knexSnakecaseMappers,
+    // Safely apply knexSnakecaseMappers if available in this installation
+    ...(require('objection').knexSnakecaseMappers ? require('objection').knexSnakecaseMappers() : {})
   }
 };
 

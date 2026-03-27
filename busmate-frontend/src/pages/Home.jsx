@@ -1,12 +1,56 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import heroBg from '../assets/hero-bg.jpg';
 import { Search, Map, MapPin, Compass, AlertTriangle, Clock, Zap, Star } from 'lucide-react';
+import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
 import Button from '../components/common/Button';
 import InputField from '../components/common/InputField';
 import Card from '../components/common/Card';
 
+const libraries = ["places"];
+
 const Home = () => {
+  const [isLocationEnabled, setIsLocationEnabled] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  const { isLoaded, loadError } = useLoadScript({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries,
+  });
+
+  const handleEnableLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        setIsLocationEnabled(true);
+      },
+      (error) => {
+        console.error("Error getting location:", error);
+        alert("Please enable location permissions in your browser to use this feature.");
+      }
+    );
+  }, []);
+
+  const mapContainerStyle = {
+    width: '100%',
+    height: '100%',
+  };
+
   return (
     <div className="pt-16 pb-10">
       {/* Hero Section */}
@@ -93,14 +137,71 @@ const Home = () => {
                 <Link to="/live" className="text-sm text-blue-600 font-medium hover:underline">View Full Map</Link>
               </div>
               <Card className="h-64 sm:h-80 w-full relative bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
-                <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "20px 20px" }}></div>
-                <div className="text-center relative z-10 w-full px-4">
-                  <Map className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-500 dark:text-gray-400 font-medium mb-4">Live map integration will display here</p>
-                  <Button variant="primary" className="shadow-lg">
-                    <MapPin className="w-4 h-4 mr-2" /> Enable Location
-                  </Button>
-                </div>
+                {isLocationEnabled && isLoaded && userLocation ? (
+                  <GoogleMap
+                    mapContainerStyle={mapContainerStyle}
+                    center={userLocation}
+                    zoom={15}
+                    options={{
+                      disableDefaultUI: true,
+                      zoomControl: true,
+                      styles: isDarkMode ? [
+                        { "elementType": "geometry", "stylers": [{ "color": "#212121" }] },
+                        { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
+                        { "elementType": "labels.text.fill", "stylers": [{ "color": "#bdbdbd" }] },
+                        { "elementType": "labels.text.stroke", "stylers": [{ "color": "#212121" }] },
+                        { "featureType": "administrative", "elementType": "geometry", "stylers": [{ "color": "#757575" }] },
+                        { "featureType": "administrative.country", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] },
+                        { "featureType": "administrative.land_parcel", "stylers": [{ "visibility": "off" }] },
+                        { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#bdbdbd" }] },
+                        { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
+                        { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#181818" }] },
+                        { "featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
+                        { "featureType": "poi.park", "elementType": "labels.text.stroke", "stylers": [{ "color": "#1b1b1b" }] },
+                        { "featureType": "road", "elementType": "geometry.fill", "stylers": [{ "color": "#2c2c2c" }] },
+                        { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#8a8a8a" }] },
+                        { "featureType": "road.arterial", "elementType": "geometry", "stylers": [{ "color": "#373737" }] },
+                        { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#3c3c3c" }] },
+                        { "featureType": "road.highway.controlled_access", "elementType": "geometry", "stylers": [{ "color": "#4e4e4e" }] },
+                        { "featureType": "road.local", "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
+                        { "featureType": "transit", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
+                        { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#000000" }] },
+                        { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#3d3d3d" }] }
+                      ] : []
+                    }}
+                  >
+                    <Marker 
+                      position={userLocation} 
+                      icon={{
+                        url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png"
+                      }}
+                    />
+                  </GoogleMap>
+                ) : (
+                  <>
+                    <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(#CBD5E1 1px, transparent 1px)", backgroundSize: "20px 20px" }}></div>
+                    <div className="text-center relative z-10 w-full px-4">
+                      {loadError ? (
+                        <p className="text-red-500 font-medium font-bold">Map Loading Error</p>
+                      ) : (
+                        <>
+                          <Map className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                          <p className="text-gray-500 dark:text-gray-400 font-medium mb-4">
+                            {!isLoaded ? "Initializing Maps..." : "Live map integration will display here"}
+                          </p>
+                          <Button 
+                            variant="primary" 
+                            className="shadow-lg" 
+                            onClick={handleEnableLocation}
+                            disabled={!isLoaded}
+                          >
+                            <MapPin className="w-4 h-4 mr-2" /> Enable Location
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
               </Card>
             </section>
 
