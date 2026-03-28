@@ -1,15 +1,44 @@
 import { useEffect, useMemo, useState } from "react";
 import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
 import io from "socket.io-client";
+import busIcon from "../assets/bus-icon.png";
 
 // Ensure socket connects to the backend as an admin (no JWT required)
-const socket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:4000", {
+const socket = io("/", {
   autoConnect: false,
   auth: { admin: true },
 });
 
 export default function LiveBusMap({ driverId, routeId }) {
   const [pos, setPos] = useState(null);
+  const [userPos, setUserPos] = useState(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    let watchId;
+
+    const startTracking = (highAccuracy = true) => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      
+      watchId = navigator.geolocation.watchPosition(
+        (p) => setUserPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        (err) => {
+          console.error(`Error getting user location (highAccuracy=${highAccuracy}):`, err);
+          if (highAccuracy && (err.code === 3 || err.code === 1)) {
+            startTracking(false);
+          }
+        },
+        { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 5000 : 15000, maximumAge: 0 }
+      );
+    };
+
+    startTracking(true);
+
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
@@ -22,8 +51,11 @@ export default function LiveBusMap({ driverId, routeId }) {
     // For now we just listen to all bus:location events and filter by driverId
     const handleLocation = (data) => {
       // data: { driverId, busId, routeId, lat, lon, speed, timestamp }
-      // Show the location if it matches driverId, OR if driverId is the dummy "driver_001" 
-      if (!driverId || data.driverId == driverId || driverId === "driver_001") {
+      // Only update if it matches the specific driverId we are looking for
+      if (driverId && data.driverId == driverId) {
+        setPos({ lat: data.lat, lng: data.lon });
+      } else if (!driverId) {
+        // If no specific driverId, we might showing all (unlikely for this component's typical use)
         setPos({ lat: data.lat, lng: data.lon });
       }
     };
@@ -32,7 +64,7 @@ export default function LiveBusMap({ driverId, routeId }) {
 
     // Optional: fetch last known position from Redis through backend API
     if (routeId) {
-      fetch(`http://localhost:4000/routes/${routeId}/positions`)
+      fetch(`/api/routes/${routeId}/positions`)
         .then((res) => res.json())
         .then((data) => {
           if (data.success && data.positions) {
@@ -61,7 +93,24 @@ export default function LiveBusMap({ driverId, routeId }) {
         zoom={16}
         mapContainerStyle={{ width: "100%", height: "100%" }}
       >
-        {pos && <Marker position={pos} />}
+        {pos && (
+          <Marker 
+            position={pos} 
+            icon={{
+              url: busIcon,
+              scaledSize: new window.google.maps.Size(60, 50)
+            }}
+          />
+        )}
+        {userPos && (
+          <Marker 
+            position={userPos} 
+            icon={{
+              url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+              scaledSize: new window.google.maps.Size(30,30)
+            }}
+          />
+        )}
       </GoogleMap>
     </div>
   );

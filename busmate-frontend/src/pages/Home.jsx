@@ -6,6 +6,7 @@ import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
 import Button from '../components/common/Button';
 import InputField from '../components/common/InputField';
 import Card from '../components/common/Card';
+/* GeolocationStatus removed */
 
 const libraries = ["places"];
 
@@ -13,6 +14,7 @@ const Home = () => {
   const [isLocationEnabled, setIsLocationEnabled] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
+  const [locationStatus, setLocationStatus] = useState('loading');
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -33,17 +35,45 @@ const Home = () => {
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setUserLocation({ lat: latitude, lng: longitude });
-        setIsLocationEnabled(true);
-      },
-      (error) => {
-        console.error("Error getting location:", error);
-        alert("Please enable location permissions in your browser to use this feature.");
-      }
-    );
+    setLocationStatus('loading');
+    setIsLocationEnabled(true);
+
+    const startTracking = (highAccuracy = true) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setUserLocation({ lat: latitude, lng: longitude });
+          setLocationStatus(highAccuracy ? 'high' : 'low');
+        },
+        (error) => {
+          console.error(`Error getting location (highAccuracy=${highAccuracy}):`, error);
+          if (highAccuracy && (error.code === 3 || error.code === 1)) {
+            startTracking(false);
+          } else {
+            setLocationStatus('error');
+            alert("Please enable location permissions in your browser to use this feature.");
+          }
+        },
+        { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 5000 : 15000, maximumAge: 0 }
+      );
+    };
+
+    startTracking(true);
+  }, []);
+
+  // Auto-enable location on mount
+  useEffect(() => {
+    if (isLoaded) {
+      handleEnableLocation();
+    }
+  }, [isLoaded]);
+
+  const onMapClick = useCallback((e) => {
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    setUserLocation({ lat, lng });
+    setLocationStatus('low');
+    console.log("Home manual location set:", { lat, lng });
   }, []);
 
   const mapContainerStyle = {
@@ -57,7 +87,7 @@ const Home = () => {
       <section className="relative text-white pt-16 pb-24 px-4 sm:px-6 lg:px-8 min-h-[500px] flex items-center justify-center overflow-hidden">
         {/* Background Image & Shaders */}
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat sm:bg-fixed"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{ backgroundImage: `url(${heroBg})` }}
         ></div>
         {/* Modern Shader Overlays - Kept clear so the globe is very visible */}
@@ -130,21 +160,38 @@ const Home = () => {
 
             {/* Live Map Preview Placeholder */}
             <section>
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50 flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-blue-600" /> Buses Near You
-                </h2>
-                <Link to="/live" className="text-sm text-blue-600 font-medium hover:underline">View Full Map</Link>
-              </div>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50 flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-blue-600" /> Buses Near You
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    {isLocationEnabled && (
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800">
+                          <div className={`w-1.5 h-1.5 rounded-full ${locationStatus === 'high' ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                          <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300">
+                            {locationStatus === 'high' ? 'LIVE GPS' : 'APPROX'}
+                          </span>
+                        </div>
+                        {(locationStatus === 'low' || locationStatus === 'error') && (
+                          <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium">Approximate on laptops</span>
+                        )}
+                      </div>
+                    )}
+                    <Link to="/live" className="text-sm text-blue-600 font-medium hover:underline">View Full Map</Link>
+                  </div>
+                </div>
               <Card className="h-64 sm:h-80 w-full relative bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
                 {isLocationEnabled && isLoaded && userLocation ? (
                   <GoogleMap
                     mapContainerStyle={mapContainerStyle}
                     center={userLocation}
                     zoom={15}
+                    onClick={onMapClick}
                     options={{
                       disableDefaultUI: true,
                       zoomControl: true,
+                      clickableIcons: false,
                       styles: isDarkMode ? [
                         { "elementType": "geometry", "stylers": [{ "color": "#212121" }] },
                         { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
@@ -185,18 +232,9 @@ const Home = () => {
                         <p className="text-red-500 font-medium font-bold">Map Loading Error</p>
                       ) : (
                         <>
-                          <Map className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-gray-500 dark:text-gray-400 font-medium mb-4">
-                            {!isLoaded ? "Initializing Maps..." : "Live map integration will display here"}
+                          <p className="text-gray-500 dark:text-gray-400 font-medium mb-4 animate-pulse">
+                            {!isLoaded ? "Initializing Maps..." : "Finding your location..."}
                           </p>
-                          <Button 
-                            variant="primary" 
-                            className="shadow-lg" 
-                            onClick={handleEnableLocation}
-                            disabled={!isLoaded}
-                          >
-                            <MapPin className="w-4 h-4 mr-2" /> Enable Location
-                          </Button>
                         </>
                       )}
                     </div>

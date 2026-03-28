@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Map as MapIcon, Filter, Layers, Crosshair, Bus, AlertCircle, Navigation } from 'lucide-react';
-import { GoogleMap, Marker, useLoadScript, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, Marker, useLoadScript, InfoWindow, Autocomplete } from "@react-google-maps/api";
 import io from "socket.io-client";
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
@@ -29,6 +29,12 @@ const LiveTracking = () => {
   const [selectedBus, setSelectedBus] = useState(null);
   const [map, setMap] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
+  const [locationStatus, setLocationStatus] = useState('loading'); // 'loading', 'high', 'low', 'error'
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [rawLocation, setRawLocation] = useState(null); // { lat, lng, accuracy }
+  const [autocomplete, setAutocomplete] = useState(null);
+  const [currentAddress, setCurrentAddress] = useState("Detecting...");
+  const [socketStatus, setSocketStatus] = useState('connecting');
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -43,35 +49,57 @@ const LiveTracking = () => {
     libraries,
   });
 
-  // Get user location
+  // Get user location with fallback
   useEffect(() => {
     if (!navigator.geolocation) {
       console.warn("Geolocation not supported");
+      setLocationStatus('error');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      },
-      (err) => console.error("Error getting location", err)
-    );
+    let watchId;
 
-    // Also track location
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      },
-      (err) => console.error("Error watching location", err)
-    );
+    const startTracking = (highAccuracy = true) => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
 
-    return () => navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setRawLocation({ ...coords, accuracy: pos.coords.accuracy });
+          setUserLocation(coords);
+          setLocationStatus(highAccuracy ? 'high' : 'low');
+        },
+        (err) => {
+          console.error(`Geolocation error (highAccuracy=${highAccuracy}):`, err);
+          if (highAccuracy && (err.code === 3 || err.code === 1)) {
+            // Timeout or Permission Denied for high accuracy - try low accuracy
+            console.log("Falling back to low accuracy...");
+            startTracking(false);
+          } else {
+            setLocationStatus('error');
+          }
+        },
+        { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 10000 : 20000, maximumAge: 0 }
+      );
+    };
+
+    startTracking(true);
+
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
   // Socket connection for bus updates
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:4000", {
+    const socket = io("/", {
       auth: { admin: true },
+    });
+
+    socket.on("connect", () => setSocketStatus('connected'));
+    socket.on("connect_error", (err) => {
+      console.error("Socket error:", err);
+      setSocketStatus('error');
     });
 
     socket.on("bus:location", (data) => {
@@ -79,22 +107,16 @@ const LiveTracking = () => {
       if (!userLocation) return;
 
       const dist = calculateDistance(userLocation.lat, userLocation.lng, data.lat, data.lon);
-
-      if (dist <= 5) { // Only show buses within 5km
-        setNearbyBuses((prev) => {
-          const index = prev.findIndex(b => b.driverId === data.driverId);
-          const updatedBus = { ...data, distance: dist };
-          if (index !== -1) {
-            const newBuses = [...prev];
-            newBuses[index] = updatedBus;
-            return newBuses;
-          }
-          return [...prev, updatedBus];
-        });
-      } else {
-        // Remove from nearby if it goes out of range
-        setNearbyBuses((prev) => prev.filter(b => b.driverId !== data.driverId));
-      }
+      setNearbyBuses((prev) => {
+        const index = prev.findIndex(b => b.driverId === data.driverId);
+        const updatedBus = { ...data, distance: dist };
+        if (index !== -1) {
+          const newBuses = [...prev];
+          newBuses[index] = updatedBus;
+          return newBuses;
+        }
+        return [...prev, updatedBus];
+      });
     });
 
     return () => socket.disconnect();
@@ -109,6 +131,49 @@ const LiveTracking = () => {
 
   const onMapLoad = useCallback((mapInstance) => {
     setMap(mapInstance);
+  }, []);
+
+  const onLoadAutocomplete = (autocompleteInstance) => {
+    setAutocomplete(autocompleteInstance);
+  };
+
+  const onPlaceChanged = () => {
+    if (autocomplete !== null) {
+      const place = autocomplete.getPlace();
+      if (place.geometry) {
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        const newPos = { lat, lng };
+        setUserLocation(newPos);
+        setCurrentAddress(place.formatted_address || "Custom Location");
+        setLocationStatus('high');
+        if (map) {
+          map.panTo(newPos);
+          map.setZoom(16);
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (userLocation && isLoaded) {
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ location: userLocation }, (results, status) => {
+        if (status === "OK" && results[0]) {
+          setCurrentAddress(results[0].formatted_address);
+        } else {
+          setCurrentAddress("Coordinate: " + userLocation.lat.toFixed(4) + ", " + userLocation.lng.toFixed(4));
+        }
+      });
+    }
+  }, [userLocation, isLoaded]);
+
+  const onMapClick = useCallback((e) => {
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    setUserLocation({ lat, lng });
+    setLocationStatus('low'); // manual is considered "low" or "manual"
+    console.log("Manual location set:", { lat, lng });
   }, []);
 
   const handleRecenter = () => {
@@ -128,9 +193,11 @@ const LiveTracking = () => {
             center={center}
             zoom={14}
             onLoad={onMapLoad}
+            onClick={onMapClick}
             options={{
               disableDefaultUI: true,
               zoomControl: false,
+              clickableIcons: false,
               styles: isDarkMode ? [
                 { "elementType": "geometry", "stylers": [{ "color": "#212121" }] },
                 { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
@@ -188,29 +255,90 @@ const LiveTracking = () => {
       </div>
 
       {/* Floating Header & Search */}
-      <div className="absolute top-20 left-4 right-4 md:left-8 md:right-8 z-10 flex flex-col sm:flex-row gap-3">
-        <div className="flex-grow bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex items-center p-2 border border-gray-100 dark:border-gray-700">
-          <div className="pl-3 pr-2 text-gray-400">
-            <Filter className="w-5 h-5" />
+      <div className="absolute top-20 left-4 right-4 md:left-8 md:right-8 z-10 flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Main Route Filter */}
+          <div className="flex-grow bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex items-center p-2 border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center gap-2 pl-2">
+              <div className={`w-2 h-2 rounded-full ${socketStatus === 'connected' ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></div>
+              <span className="text-[10px] font-bold text-gray-400">SERVER {socketStatus.toUpperCase()}</span>
+            </div>
+            <div className="pl-3 pr-2 text-gray-400">
+              <Filter className="w-5 h-5" />
+            </div>
+            <select
+              className="w-full bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300 py-2 outline-none font-medium text-sm sm:text-base"
+              value={selectedRoute}
+              onChange={(e) => setSelectedRoute(e.target.value)}
+            >
+              <option value="All">All Nearby Routes</option>
+              <option value="138">138 - Maharagama / Fort</option>
+              <option value="120">120 - Piliyandala / Fort</option>
+              <option value="177">177 - Kaduwela / Kollupitiya</option>
+            </select>
           </div>
-          <select
-            className="w-full bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300 py-2 outline-none font-medium text-sm sm:text-base"
-            value={selectedRoute}
-            onChange={(e) => setSelectedRoute(e.target.value)}
+
+          {/* Location Search Bar */}
+          {isLoaded ? (
+            <div className="flex-grow bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex items-center p-2 border border-gray-100 dark:border-gray-700 sm:max-w-xs overflow-hidden">
+              <div className="pl-3 pr-2 text-gray-400">
+                <MapIcon className="w-5 h-5" />
+              </div>
+              <Autocomplete
+                onLoad={onLoadAutocomplete}
+                onPlaceChanged={onPlaceChanged}
+                className="w-full"
+              >
+                <input
+                  type="text"
+                  placeholder="Find my location..."
+                  value={currentAddress === "Detecting..." ? "" : currentAddress}
+                  onChange={(e) => setCurrentAddress(e.target.value)}
+                  className="w-full bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300 py-2 outline-none font-medium text-sm"
+                />
+              </Autocomplete>
+            </div>
+          ) : (
+            <div className="flex-grow bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex items-center p-2 border border-blue-50/50 dark:border-gray-700 sm:max-w-xs opacity-60">
+              <div className="pl-3 pr-2 text-gray-400 animate-pulse">
+                <MapIcon className="w-5 h-5 text-blue-400" />
+              </div>
+              <span className="text-gray-400 text-sm py-2">Searching...</span>
+            </div>
+          )}
+
+          <Button 
+            variant="ghost" 
+            className="bg-white dark:bg-gray-800 p-2 shadow-lg border border-gray-100 dark:border-gray-700"
+            onClick={() => window.location.reload()} // simplest forced re-request for now
+            title="Force refresh all location data"
           >
-            <option value="All">All Nearby Routes</option>
-            <option value="138">138 - Maharagama / Fort</option>
-            <option value="120">120 - Piliyandala / Fort</option>
-            <option value="177">177 - Kaduwela / Kollupitiya</option>
-          </select>
+            <Crosshair className="w-5 h-5 text-blue-600" />
+          </Button>
+
           <Button
             variant="ghost"
-            className="ml-2 text-blue-600 bg-blue-50 hover:bg-blue-100 p-2 sm:px-4 sm:py-2 flex items-center justify-center border-none"
+            className="text-blue-600 bg-blue-50 hover:bg-blue-100 p-2 sm:px-4 sm:py-2 flex items-center justify-center border-none"
             onClick={() => setShowFilters(!showFilters)}
           >
             <LevelsIcon />
           </Button>
         </div>
+        
+        {/* Status removed as per user request */}
+
+        {/* Diagnostics Panel */}
+        {showDiagnostics && rawLocation && (
+          <div className="bg-white/95 dark:bg-gray-900/95 p-3 rounded-xl border border-blue-100 dark:border-blue-900 shadow-xl max-w-xs text-[10px] space-y-1 font-mono">
+            <p className="font-bold text-blue-600 dark:text-blue-400 border-b border-blue-50 dark:border-blue-800 pb-1 mb-1">RAW GEOLOCATION DATA</p>
+            <p><span className="text-gray-400">LAT:</span> {rawLocation.lat.toFixed(6)}</p>
+            <p><span className="text-gray-400">LNG:</span> {rawLocation.lng.toFixed(6)}</p>
+            <p><span className="text-gray-400">ACCURACY:</span> {rawLocation.accuracy.toFixed(1)} meters</p>
+            <p className="text-amber-600 dark:text-amber-400 pt-1 mt-1 border-t border-blue-50 dark:border-blue-800">
+              Tip: Click anywhere on the map to manually set your location if this is wrong.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Map Controls */}
@@ -226,45 +354,55 @@ const LiveTracking = () => {
         </button>
       </div>
 
-      {/* Bus Info Panel (Always showing nearest or selected) */}
-      {(selectedBus || (nearbyBuses.length > 0)) && (
-        <div className="absolute bottom-0 left-0 right-0 sm:left-4 sm:bottom-4 sm:right-auto sm:w-80 z-20">
-          <Card className="rounded-b-none sm:rounded-2xl shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] sm:shadow-xl border-b-0 sm:border-b">
-            <div className="p-1 flex justify-center sm:hidden">
-              <div className="w-12 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mt-2"></div>
+      {/* Bus Info Panel (Show if selected, or if nearby on desktop only) */}
+      {(selectedBus || (nearbyBuses.length > 0 && window.innerWidth > 640)) && (
+        <div className="absolute bottom-0 left-0 right-0 sm:left-4 sm:bottom-4 sm:right-auto sm:w-80 z-20 transition-transform duration-300">
+          <Card className="rounded-t-3xl sm:rounded-2xl shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] sm:shadow-xl border-b-0 sm:border-b overflow-hidden">
+            <div className="p-1 flex justify-center sm:hidden bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700">
+              <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-600 rounded-full my-2"></div>
             </div>
-            <div className="p-5">
-              <div className="flex justify-between items-start mb-4">
+            <div className="p-4 sm:p-5">
+              <div className="flex justify-between items-start mb-3 sm:mb-4">
                 <div>
-                  <h3 className="font-bold text-gray-900 dark:text-gray-50 text-lg flex items-center gap-2">
-                    <Bus className="w-5 h-5 text-blue-600" /> Route {selectedBus?.routeId || nearbyBuses[0]?.routeId || '...'}
+                  <h3 className="font-bold text-gray-900 dark:text-gray-50 text-base sm:text-lg flex items-center gap-2">
+                    <Bus className="w-4 h-4 sm:w-5 h-5 text-blue-600" /> Route {selectedBus?.routeId || nearbyBuses[0]?.routeId || '...'}
                   </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-[11px] sm:text-sm text-gray-500 dark:text-gray-400">
                     Distance: {(selectedBus?.distance || nearbyBuses[0]?.distance || 0).toFixed(2)} km away
                   </p>
                 </div>
-                <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                  Live
-                </span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                    Live
+                  </span>
+                  <button 
+                    onClick={() => setSelectedBus(null)}
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-400 sm:hidden"
+                  >
+                    <AlertCircle className="w-5 h-5" /> {/* Close icon placeholder using AlertCircle for simplicity or X if available */}
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Driver ID</p>
-                  <p className="font-semibold text-gray-900 dark:text-gray-50 text-sm">{selectedBus?.driverId || nearbyBuses[0]?.driverId}</p>
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4 sm:mb-5">
+                <div className="bg-gray-50 dark:bg-gray-900 p-2 sm:p-3 rounded-xl border border-gray-100 dark:border-gray-700">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Driver ID</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-50 text-xs sm:text-sm">{selectedBus?.driverId || nearbyBuses[0]?.driverId}</p>
                 </div>
-                <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
-                  <p className="text-xs text-amber-600 mb-1">Status</p>
-                  <p className="font-semibold text-amber-700 text-sm">Active</p>
+                <div className="bg-amber-50 p-2 sm:p-3 rounded-xl border border-amber-100">
+                  <p className="text-[10px] text-amber-600 mb-0.5">Status</p>
+                  <p className="font-semibold text-amber-700 text-xs sm:text-sm">Active</p>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Current Speed</p>
-                  <p className="font-semibold text-gray-900 dark:text-gray-50 text-sm">{selectedBus?.speed || nearbyBuses[0]?.speed || 0} km/h</p>
+                <div className="bg-gray-50 dark:bg-gray-900 p-2 sm:p-3 rounded-xl border border-gray-100 dark:border-gray-700">
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">Speed</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-50 text-xs sm:text-sm">
+                    {Number(selectedBus?.speed || nearbyBuses[0]?.speed || 0).toFixed(1)} km/h
+                  </p>
                 </div>
-                <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                  <p className="text-xs text-blue-600 mb-1">Last Update</p>
-                  <p className="font-semibold text-blue-700 text-sm">Just now</p>
+                <div className="bg-blue-50 p-2 sm:p-3 rounded-xl border border-blue-100">
+                  <p className="text-[10px] text-blue-600 mb-0.5">Update</p>
+                  <p className="font-semibold text-blue-700 text-xs sm:text-sm">Just now</p>
                 </div>
               </div>
 

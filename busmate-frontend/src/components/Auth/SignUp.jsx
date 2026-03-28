@@ -23,7 +23,7 @@ const Register = () => {
             onSubmit={(values, action) => {
                 const vals = { ...values }
                 action.resetForm();
-                fetch("http://localhost:4000/auth/register", {
+                fetch("/api/auth/register", {
                     method: "POST",
                     credential: "include",
                     headers: {

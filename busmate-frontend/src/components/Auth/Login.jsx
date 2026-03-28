@@ -25,7 +25,7 @@ const Login = () => {
             onSubmit={(values, action) => {
                 const vals = { ...values }
                 action.resetForm();
-                fetch("http://localhost:4000/auth/login", {
+                fetch("/api/auth/login", {
                     method:"POST",
                     credentials: "include",
                     headers: {

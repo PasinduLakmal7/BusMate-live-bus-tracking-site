@@ -114,7 +114,7 @@ const Navbar = () => {
 
       {/* Mobile Navigation Menu */}
       {isOpen && (
-        <div className="md:hidden px-4 pt-2 pb-4 space-y-1 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 shadow-lg absolute w-full animate-in slide-in-from-top-4 duration-200">
+        <div className="md:hidden px-4 pt-2 pb-4 space-y-1 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 shadow-lg absolute w-full animate-in slide-in-from-top-4 duration-200 max-h-[80vh] overflow-y-auto">
           {navLinks.map((link) => (
             <Link
               key={link.name}

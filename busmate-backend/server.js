@@ -7,6 +7,8 @@ const cors = require("cors");
 const authRouter = require("./src/routers/authRouter.js");
 const driverRouter = require("./src/routers/driverRouter.js");
 require("dotenv").config();
+const dgram = require('dgram');
+const os = require('os');
 
 
 //database
@@ -83,4 +85,31 @@ app.get('/routes/:routeId/positions', async (req, res) => {
 
 server.listen(4000, '0.0.0.0', () => {
     console.log('Server is running on port 4000 (IPv4 + IPv6)');
+});
+
+// 📡 UDP Discovery Broadcast (Every 5 seconds)
+// This allows the mobile app to find the server's IP naturally when on the same WiFi.
+const udpServer = dgram.createSocket('udp4');
+const DISCOVERY_PORT = 4001;
+const BROADCAST_INTERVAL = 5000;
+
+function broadcastDiscovery() {
+    try {
+        const message = Buffer.from(JSON.stringify({
+            service: 'busmate-backend',
+            port: 4000
+        }));
+
+        udpServer.setBroadcast(true);
+        udpServer.send(message, 0, message.length, DISCOVERY_PORT, '255.255.255.255', (err) => {
+            if (err) console.error('UDP Broadcast error:', err);
+        });
+    } catch (e) {
+        console.error('UDP Broadcast failed:', e);
+    }
+}
+
+udpServer.bind(() => {
+    console.log(`📡 UDP Discovery active on port ${DISCOVERY_PORT}`);
+    setInterval(broadcastDiscovery, BROADCAST_INTERVAL);
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import io from "socket.io-client";
 
 // Ensure socket connects to the backend as an admin (no JWT required)
-const socket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:4000", {
+const socket = io("/", {
     autoConnect: false,
     auth: { admin: true },
 });
