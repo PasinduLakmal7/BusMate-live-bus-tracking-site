@@ -3,20 +3,21 @@
  */
 exports.seed = async function (knex) {
 
-  await knex('driving_licenses').del();
+  await knex.raw('TRUNCATE TABLE driving_licenses RESTART IDENTITY CASCADE');
 
   const licenses = [];
 
   for (let i = 1; i <= 25; i++) {
     licenses.push({
-      driver_id: i, // assumes driver_id 1–25 exist
-      license_number: `B${2020 + i}${i.toString().padStart(4, '0')}`,
-      expiry_date: new Date(2028, i % 12, (i % 28) + 1), // future expiry dates
-      photo_url: `https://example.com/license${i}.jpg`,
-      verified_status: i % 4 === 0, // every 4th license verified
+      driver_id: i, // linked to drivers 1-25
+      license_number: `B${1000000 + i}`,
+      expiry_date: new Date(2028, i % 12, (i % 28) + 1), // realistic expiry dates
+      photo_url: `https://example.com/license-photos/driver-${i}.jpg`,
+      verified_status: true, // all current drivers are verified
       created_at: new Date()
     });
   }
 
   await knex('driving_licenses').insert(licenses);
 };
+

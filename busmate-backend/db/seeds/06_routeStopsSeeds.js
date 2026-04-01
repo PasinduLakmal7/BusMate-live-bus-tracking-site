@@ -8,33 +8,34 @@ exports.seed = async function (knex) {
   const stops = [];
 
   const routeStopsData = [
-    // Route 1 - Colombo → Galle
-    ["Colombo Fort", "Kalutara", "Bentota", "Hikkaduwa", "Galle"],
+    // Route 1 - 138 Maharagama → Fort
+    ["Maharagama", "Nawinna", "Nugegoda", "Kirulapone", "Havelock Town", "Town Hall", "Slave Island", "Fort"],
 
-    // Route 2 - Colombo → Kandy
-    ["Colombo Fort", "Kadawatha", "Warakapola", "Peradeniya", "Kandy"],
+    // Route 2 - 120 Horana → Fort
+    ["Horana", "Pokunuwita", "Kahathuduwa", "Polgasowita", "Piliyandala", "Boralesgamuwa", "Rathanapitiya", "Nugegoda", "Kohuwala", "Pamankada", "Havelock Town", "Thummulla", "Town Hall", "Slave Island", "Fort"],
 
-    // Route 3 - Colombo → Matara
-    ["Colombo Fort", "Kalutara", "Aluthgama", "Ambalangoda", "Matara"],
+    // Route 3 - 154 Kiribathgoda → Angulana
+    ["Kiribathgoda", "Kelaniya", "Peliyagoda", "Grandpass", "Pettah", "Fort", "Galle Face", "Kollupitiya", "Bambalapitiya", "Wellawatte", "Mount Lavinia", "Ratmalana", "Angulana"],
 
-    // Route 4 - Colombo → Kurunegala
-    ["Colombo Fort", "Nittambuwa", "Mirigama", "Narammala", "Kurunegala"],
+    // Route 4 - 122 Avissawella → Fort
+    ["Avissawella", "Kosgama", "Kaluaggala", "Hanwella", "Jathika Pasala", "Meepe", "Godagama", "Homagama", "Makumbura", "Kottawa", "Pannipitiya", "Maharagama", "Nugegoda", "High Level Road", "Fort"],
 
-    // Route 5 - Colombo → Anuradhapura
-    ["Colombo Fort", "Kurunegala", "Dambulla", "Kekirawa", "Anuradhapura"]
+    // Route 5 - 177 Kaduwela → Kollupitiya
+    ["Kaduwela", "Malabe", "Thalahena", "Koswatta", "Battaramulla", "Rajagiriya", "Borella", "Town Hall", "Kollupitiya"]
   ];
 
-  let latitudeBase = 6.9000;
-  let longitudeBase = 79.8500;
+  // Base coordinates near Colombo
+  let latitudeBase = 6.9271; 
+  let longitudeBase = 79.8612;
 
   routeStopsData.forEach((stopsList, routeIndex) => {
     stopsList.forEach((stop, index) => {
       stops.push({
-        route_id: routeIndex + 1,  // route_id 1–5
+        route_id: routeIndex + 1,
         stop_name: stop,
         stop_order: index + 1,
-        latitude: (latitudeBase + (routeIndex * 0.05) + (index * 0.01)).toFixed(8),
-        longitude: (longitudeBase + (routeIndex * 0.05) + (index * 0.01)).toFixed(8),
+        latitude: (latitudeBase + (routeIndex * 0.02) + (index * 0.005)).toFixed(8),
+        longitude: (longitudeBase + (routeIndex * 0.02) + (index * 0.005)).toFixed(8),
         created_at: new Date()
       });
     });
@@ -42,3 +43,4 @@ exports.seed = async function (knex) {
 
   await knex('route_stops').insert(stops);
 };
+

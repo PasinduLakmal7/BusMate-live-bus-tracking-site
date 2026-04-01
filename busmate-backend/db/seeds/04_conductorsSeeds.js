@@ -3,20 +3,25 @@
  */
 exports.seed = async function (knex) {
 
-  await knex('conductors').del();
+  await knex.raw('TRUNCATE TABLE conductors RESTART IDENTITY CASCADE');
 
-  const conductors = [];
+  const names = [
+    'Upul Tharanga', 'Mahela Jayawardena', 'Kumar Sangakkara', 'Tillakaratne Dilshan', 'Angelo Mathews',
+    'Lasith Malinga', 'Kusal Perera', 'Dhananjaya de Silva', 'Nuwan Kulasekara', 'Ajantha Mendis',
+    'Rangana Herath', 'Chaminda Vaas', 'Muttiah Muralitharan', 'Sanath Jayasuriya', 'Arjuna Ranatunga',
+    'Roshan Mahanama', 'Hashan Tillakaratne', 'Marvan Atapattu', 'Asanka Gurusinha', 'Rumesh Ratnayake',
+    'Dhammika Prasad', 'Suranga Lakmal', 'Lahiru Kumara', 'Dushmantha Chameera', 'Wanindu Hasaranga'
+  ];
 
-  for (let i = 1; i <= 25; i++) {
-    conductors.push({
-      full_name: `Conductor ${i}`,
-      nic: `1995${i.toString().padStart(2, '0')}56789${i}`,
-      phone: `07150000${i.toString().padStart(2, '0')}`,
-      photo_url: `https://example.com/conductor${i}.jpg`,
-      status: i % 5 === 0 ? 'inactive' : 'active',
-      created_at: new Date()
-    });
-  }
+  const conductors = names.map((name, i) => ({
+    full_name: name,
+    nic: `${1980 + i}5678901${i % 10}`,
+    phone: `071${(1000000 + i).toString()}`,
+    photo_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+    status: i % 10 === 0 ? 'inactive' : 'active',
+    created_at: new Date()
+  }));
 
   await knex('conductors').insert(conductors);
 };
+
