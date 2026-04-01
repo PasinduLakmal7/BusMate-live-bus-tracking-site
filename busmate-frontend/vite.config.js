@@ -17,7 +17,11 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: [
       'all',
-      '5732-2402-4000-2142-3e0-fdde-99d4-3432-ed5c.ngrok-free.app'
+      '4fbe-103-21-166-1.ngrok-free.app',
+      '5a3c-2402-4000-2141-b362-d11c-7dc6-c14c-b194.ngrok-free.app',
+      '5732-2402-4000-2142-3e0-fdde-99d4-3432-ed5c.ngrok-free.app',
+      '8d5a-2402-4000-2141-b362-e9e0-bdce-dd20-c70b.ngrok-free.app',
+
     ],
     proxy: {
       '/socket.io': {

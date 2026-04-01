@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { MapPin, Navigation, ArrowDownUp, Clock, Zap, DollarSign, ChevronDown, Map as MapIcon } from 'lucide-react';
-import { GoogleMap, Marker, useLoadScript, Polyline, InfoWindow, OverlayView, Autocomplete } from "@react-google-maps/api";
+import { GoogleMap, Marker, useLoadScript, Polyline, InfoWindow, OverlayView, Autocomplete, DirectionsRenderer, DirectionsService } from "@react-google-maps/api";
 import Button from '../components/common/Button';
 import InputField from '../components/common/InputField';
 import Card from '../components/common/Card';
@@ -14,28 +15,102 @@ const mapContainerStyle = {
 
 const defaultCenter = { lat: 6.9271, lng: 79.8612 }; // Colombo
 
-// Mock data for nearby stops
-const nearbyStops = [
-  { id: 1, name: "Town Hall", lat: 6.9150, lng: 79.8640 },
-  { id: 2, name: "Maharagama", lat: 6.8511, lng: 79.9212 },
-  { id: 3, name: "Bambalapitiya", lat: 6.8980, lng: 79.8550 },
-];
+// Mock data removed to show only live location correctly
 
 const RoutePlanner = () => {
   const [mapState, setMapState] = useState('default'); // 'default', 'active', 'results'
   const [showResults, setShowResults] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
   const [destination, setDestination] = useState(null);
+  const [destAddress, setDestAddress] = useState("");
   const [map, setMap] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const [locationStatus, setLocationStatus] = useState('loading');
-  const [autocomplete, setAutocomplete] = useState(null);
-  const [currentAddress, setCurrentAddress] = useState("Detecting...");
+  const location = useLocation();
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
     libraries,
   });
+
+  const [directionsResponse, setDirectionsResponse] = useState(null);
+  const [distance, setDistance] = useState("");
+  const [duration, setDuration] = useState("");
+
+  const calculateRoute = async () => {
+    if (!userLocation || !destination) return;
+
+    const directionsService = new window.google.maps.DirectionsService();
+
+    // Helper to Promisify the Directions Service
+    const getRoute = (mode) => {
+      return new Promise((resolve, reject) => {
+        directionsService.route(
+          {
+            origin: userLocation,
+            destination: destination,
+            travelMode: mode,
+            provideRouteAlternatives: mode === window.google.maps.TravelMode.TRANSIT,
+          },
+          (result, status) => {
+            if (status === window.google.maps.DirectionsStatus.OK) {
+              resolve(result);
+            } else {
+              reject(status);
+            }
+          }
+        );
+      });
+    };
+
+    try {
+      // 1. Try Transit First (Bus/Train)
+      const results = await getRoute(window.google.maps.TravelMode.TRANSIT);
+      if (results && results.routes && results.routes.length > 0) {
+        setDirectionsResponse(results);
+        setDistance(results.routes[0].legs[0].distance.text);
+        setDuration(results.routes[0].legs[0].duration.text);
+      }
+    } catch (error) {
+      console.warn("Public Transit route not found, falling back to Driving...", error);
+      
+      try {
+        // 2. Fallback to Driving
+        const results = await getRoute(window.google.maps.TravelMode.DRIVING);
+        if (results && results.routes && results.routes.length > 0) {
+          setDirectionsResponse(results);
+          setDistance(results.routes[0].legs[0].distance.text);
+          setDuration(results.routes[0].legs[0].duration.text);
+        }
+      } catch (fallbackError) {
+        console.error("All route modes failed:", fallbackError);
+        alert("Could not find any road route between these points (Status: " + fallbackError + ").");
+        setDirectionsResponse(null);
+        setDistance("");
+        setDuration("");
+      }
+    }
+  };
+
+
+  // Check for destination passed from Home page
+  useEffect(() => {
+    if (location.state?.destination && isLoaded) {
+      const { lat, lng, address } = location.state.destination;
+      setDestination({ lat, lng });
+      setDestAddress(address || "Selected Destination");
+    }
+  }, [location.state, isLoaded]);
+
+  // Auto-calculate route if destination is passed from home and userLocation is ready
+  useEffect(() => {
+    if (location.state?.destination && userLocation && isLoaded && !directionsResponse) {
+      calculateRoute();
+      setMapState('results');
+      setShowResults(true);
+    }
+  }, [userLocation, isLoaded, location.state, directionsResponse]);
+
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -98,10 +173,41 @@ const RoutePlanner = () => {
         if (map) {
           map.panTo(newPos);
           map.setZoom(16);
+          if (destination) {
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend(newPos);
+            bounds.extend(destination);
+            map.fitBounds(bounds, 100);
+          }
         }
       }
     } else {
       console.log("Autocomplete is not loaded yet!");
+    }
+  };
+
+  const onLoadDestAutocomplete = (instance) => {
+    setDestAutocomplete(instance);
+  };
+
+  const onDestPlaceChanged = () => {
+    if (destAutocomplete !== null) {
+      const place = destAutocomplete.getPlace();
+      if (place.geometry) {
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
+        const newPos = { lat, lng };
+        setDestination(newPos);
+        setDestAddress(place.formatted_address || "Destination Location");
+        setMapState('active');
+
+        if (map) {
+          const bounds = new window.google.maps.LatLngBounds();
+          if (userLocation) bounds.extend(userLocation);
+          bounds.extend(newPos);
+          map.fitBounds(bounds, 100);
+        }
+      }
     }
   };
 
@@ -126,26 +232,25 @@ const RoutePlanner = () => {
     console.log("Manual starting point set:", { lat, lng });
   }, []);
 
+  const [autocomplete, setAutocomplete] = useState(null);
+  const [destAutocomplete, setDestAutocomplete] = useState(null);
+  const [currentAddress, setCurrentAddress] = useState("Detecting...");
+
+
   const handleSearch = (e) => {
     e.preventDefault();
-    setMapState('results');
-    setShowResults(true);
+    if (userLocation && destination) {
+      calculateRoute();
+      setMapState('results');
+      setShowResults(true);
+    } else {
+      alert("Please select both a start and end location first!");
+    }
   };
 
   const handleDestinationChange = (e) => {
-    // Mocking finding a destination
-    if (e.target.value.length > 5) {
-      const mockDest = { lat: 6.9319, lng: 79.8478 }; // Fort
-      setDestination(mockDest);
-      setMapState('active');
-
-      if (map && userLocation) {
-        const bounds = new window.google.maps.LatLngBounds();
-        bounds.extend(userLocation);
-        bounds.extend(mockDest);
-        map.fitBounds(bounds, 100);
-      }
-    }
+    setDestAddress(e.target.value);
+    // Remove individual manual handling since Autocomplete will handle the selection
   };
 
   const polylinePath = useMemo(() => {
@@ -214,12 +319,27 @@ const RoutePlanner = () => {
                   <ArrowDownUp className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 </Button>
 
-                <InputField
-                  icon={MapPin}
-                  placeholder="Where do you want to go?"
-                  className="text-red-500"
-                  onChange={handleDestinationChange}
-                />
+                {isLoaded ? (
+                  <Autocomplete
+                    onLoad={onLoadDestAutocomplete}
+                    onPlaceChanged={onDestPlaceChanged}
+                  >
+                    <InputField
+                      icon={MapPin}
+                      placeholder="Where do you want to go?"
+                      className="text-gray-900 dark:text-gray-50 mb-1"
+                      value={destAddress}
+                      onChange={handleDestinationChange}
+                    />
+                  </Autocomplete>
+                ) : (
+                  <InputField
+                    icon={MapPin}
+                    placeholder="Loading search..."
+                    className="mb-1 opacity-50"
+                    disabled
+                  />
+                )}
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -254,7 +374,7 @@ const RoutePlanner = () => {
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-2">
                     <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Fastest</span>
-                    <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">32 min</span>
+                    <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">{duration || "32 min"}</span>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-gray-400 mb-0.5 text-right">Fare</p>
@@ -328,105 +448,85 @@ const RoutePlanner = () => {
         {/* Map Preview Area */}
         <div className="lg:col-span-2 relative h-[500px] lg:h-auto overflow-hidden rounded-3xl shadow-lg border border-gray-100 dark:border-gray-700 order-first lg:order-last mb-6 lg:mb-0">
           {isLoaded ? (
-              <GoogleMap
-                mapContainerStyle={mapContainerStyle}
-                center={userLocation || defaultCenter}
-                zoom={14}
-                onLoad={onMapLoad}
-                onClick={onMapClick}
-                options={{
-                  disableDefaultUI: true,
-                  zoomControl: true,
-                  clickableIcons: false,
-                  styles: isDarkMode ? [
-                    { "elementType": "geometry", "stylers": [{ "color": "#212121" }] },
-                    { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
-                    { "elementType": "labels.text.fill", "stylers": [{ "color": "#bdbdbd" }] },
-                    { "elementType": "labels.text.stroke", "stylers": [{ "color": "#212121" }] },
-                    { "featureType": "administrative", "elementType": "geometry", "stylers": [{ "color": "#757575" }] },
-                    { "featureType": "administrative.country", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] },
-                    { "featureType": "road", "elementType": "geometry.fill", "stylers": [{ "color": "#2c2c2c" }] },
-                    { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#8a8a8a" }] },
-                    { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#000000" }] }
-                  ] : []
-                }}
-              >
-                {/* User Pulse Dot using OverlayView */}
-                {userLocation && (
-                  <OverlayView
-                    position={userLocation}
-                    mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-                  >
-                    <div className="pulse-wrapper">
-                      <div className="pulse-ring"></div>
-                      <div className="pulse-dot"></div>
-                    </div>
-                  </OverlayView>
-                )}
+            <GoogleMap
+              mapContainerStyle={mapContainerStyle}
+              center={userLocation || defaultCenter}
+              zoom={14}
+              onLoad={onMapLoad}
+              onClick={onMapClick}
+              options={{
+                disableDefaultUI: true,
+                zoomControl: true,
+                clickableIcons: false,
+                styles: isDarkMode ? [
+                  { "elementType": "geometry", "stylers": [{ "color": "#212121" }] },
+                  { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
+                  { "elementType": "labels.text.fill", "stylers": [{ "color": "#bdbdbd" }] },
+                  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#212121" }] },
+                  { "featureType": "administrative", "elementType": "geometry", "stylers": [{ "color": "#757575" }] },
+                  { "featureType": "administrative.country", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] },
+                  { "featureType": "road", "elementType": "geometry.fill", "stylers": [{ "color": "#2c2c2c" }] },
+                  { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#8a8a8a" }] },
+                  { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#000000" }] }
+                ] : []
+              }}
+            >
+              {/* User Pulse Dot using OverlayView */}
+              {userLocation && (
+                <OverlayView
+                  position={userLocation}
+                  mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                >
+                  <div className="pulse-wrapper">
+                    <div className="pulse-ring"></div>
+                    <div className="pulse-dot"></div>
+                  </div>
+                </OverlayView>
+              )}
 
-                {/* Destination Pin */}
-                {destination && (mapState === 'active' || mapState === 'results') && (
-                  <Marker
-                    position={destination}
-                    icon={{
+              {/* Destination Pin */}
+              {destination && (mapState === 'active' || mapState === 'results') && (
+                <Marker
+                  position={destination}
+                  icon={{
+                    url: "https://maps.googleapis.com/maps/api/staticmap?markers=color:red|size:mid|label:B|6.9,79.8", // fallback or marker
+                    scaledSize: new window.google.maps.Size(40, 40)
+                  }}
+                  options={{
+                    icon: {
                       url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
                       scaledSize: new window.google.maps.Size(40, 40)
-                    }}
-                  />
-                )}
+                    }
+                  }}
+                />
+              )}
 
-                {/* Nearby Stops (Default State Only) */}
-                {mapState === 'default' && nearbyStops.map(stop => (
-                  <Marker
-                    key={stop.id}
-                    position={{ lat: stop.lat, lng: stop.lng }}
-                    icon={{
-                      path: window.google.maps.SymbolPath.CIRCLE,
-                      fillColor: "#3b82f6",
-                      fillOpacity: 1,
-                      strokeWeight: 2,
-                      strokeColor: "#ffffff",
-                      scale: 7,
-                    }}
-                  />
-                ))}
+              {/* Route Path (Results State) using DirectionsRenderer */}
+              {mapState === 'results' && directionsResponse && (
+                <DirectionsRenderer
+                  directions={directionsResponse}
+                  options={{
+                    suppressMarkers: true, // Keep our custom Markers
+                    polylineOptions: {
+                      strokeColor: "#3b82f6",
+                      strokeOpacity: 0.9,
+                      strokeWeight: 6,
+                    }
+                  }}
+                />
+              )}
 
-                {/* Route Path (Results State) */}
-                {mapState === 'results' && polylinePath.length > 0 && (
-                  <>
-                    <Polyline
-                      path={polylinePath}
-                      options={{
-                        strokeColor: "#3b82f6",
-                        strokeOpacity: 0.9,
-                        strokeWeight: 6,
-                        geodesic: true,
-                        visible: true,
-                      }}
-                    />
-                    {/* Start Marker */}
-                    <Marker
-                      position={polylinePath[0]}
-                      icon={{
-                        url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-                        scaledSize: new window.google.maps.Size(30, 30)
-                      }}
-                    />
-                    {/* Transfer Points (Mocked) */}
-                    <Marker
-                      position={{ lat: (userLocation.lat + destination.lat) / 2, lng: (userLocation.lng + destination.lng) / 2 }}
-                      icon={{
-                        path: window.google.maps.SymbolPath.CIRCLE,
-                        fillColor: "#f59e0b",
-                        fillOpacity: 1,
-                        strokeWeight: 2,
-                        strokeColor: "#ffffff",
-                        scale: 8,
-                      }}
-                    />
-                  </>
-                )}
-              </GoogleMap>
+              {/* Start Marker for Results */}
+              {mapState === 'results' && userLocation && (
+                <Marker
+                  position={userLocation}
+                  icon={{
+                    url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+                    scaledSize: new window.google.maps.Size(30, 30)
+                  }}
+                />
+              )}
+            </GoogleMap>
           ) : (
             <div className="h-full min-h-[400px] w-full bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center text-center p-8">
               <MapPin className="w-16 h-16 text-gray-300 mb-4" />

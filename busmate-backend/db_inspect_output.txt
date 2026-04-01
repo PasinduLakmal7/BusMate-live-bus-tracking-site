@@ -1,0 +1,351 @@
+=== ROUTES ===
+[
+  {
+    "route_id": 1,
+    "route_number": "100",
+    "start_location": "Colombo",
+    "end_location": "Galle",
+    "active_status": true,
+    "total_distance": "119.50",
+    "estimated_duration": 150,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 2,
+    "route_number": "101",
+    "start_location": "Colombo",
+    "end_location": "Kandy",
+    "active_status": true,
+    "total_distance": "115.00",
+    "estimated_duration": 180,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 3,
+    "route_number": "102",
+    "start_location": "Colombo",
+    "end_location": "Matara",
+    "active_status": true,
+    "total_distance": "160.00",
+    "estimated_duration": 210,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 4,
+    "route_number": "103",
+    "start_location": "Colombo",
+    "end_location": "Kurunegala",
+    "active_status": true,
+    "total_distance": "94.00",
+    "estimated_duration": 130,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 5,
+    "route_number": "104",
+    "start_location": "Colombo",
+    "end_location": "Anuradhapura",
+    "active_status": true,
+    "total_distance": "205.00",
+    "estimated_duration": 300,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 6,
+    "route_number": "105",
+    "start_location": "Kandy",
+    "end_location": "Badulla",
+    "active_status": true,
+    "total_distance": "140.00",
+    "estimated_duration": 240,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 7,
+    "route_number": "106",
+    "start_location": "Kandy",
+    "end_location": "Nuwara Eliya",
+    "active_status": true,
+    "total_distance": "76.00",
+    "estimated_duration": 150,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 8,
+    "route_number": "107",
+    "start_location": "Galle",
+    "end_location": "Matara",
+    "active_status": true,
+    "total_distance": "45.00",
+    "estimated_duration": 75,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 9,
+    "route_number": "108",
+    "start_location": "Kurunegala",
+    "end_location": "Puttalam",
+    "active_status": true,
+    "total_distance": "85.00",
+    "estimated_duration": 120,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  },
+  {
+    "route_id": 10,
+    "route_number": "109",
+    "start_location": "Anuradhapura",
+    "end_location": "Jaffna",
+    "active_status": true,
+    "total_distance": "195.00",
+    "estimated_duration": 260,
+    "created_at": "2026-03-08T18:46:21.061Z"
+  }
+]
+
+=== ROUTE_STOPS ===
+[
+  {
+    "stop_id": 1,
+    "route_id": 1,
+    "stop_name": "Colombo Fort",
+    "stop_order": 1,
+    "latitude": "6.90000000",
+    "longitude": "79.85000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 2,
+    "route_id": 1,
+    "stop_name": "Kalutara",
+    "stop_order": 2,
+    "latitude": "6.91000000",
+    "longitude": "79.86000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 3,
+    "route_id": 1,
+    "stop_name": "Bentota",
+    "stop_order": 3,
+    "latitude": "6.92000000",
+    "longitude": "79.87000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 4,
+    "route_id": 1,
+    "stop_name": "Hikkaduwa",
+    "stop_order": 4,
+    "latitude": "6.93000000",
+    "longitude": "79.88000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 5,
+    "route_id": 1,
+    "stop_name": "Galle",
+    "stop_order": 5,
+    "latitude": "6.94000000",
+    "longitude": "79.89000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 6,
+    "route_id": 2,
+    "stop_name": "Colombo Fort",
+    "stop_order": 1,
+    "latitude": "6.95000000",
+    "longitude": "79.90000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 7,
+    "route_id": 2,
+    "stop_name": "Kadawatha",
+    "stop_order": 2,
+    "latitude": "6.96000000",
+    "longitude": "79.91000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 8,
+    "route_id": 2,
+    "stop_name": "Warakapola",
+    "stop_order": 3,
+    "latitude": "6.97000000",
+    "longitude": "79.92000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 9,
+    "route_id": 2,
+    "stop_name": "Peradeniya",
+    "stop_order": 4,
+    "latitude": "6.98000000",
+    "longitude": "79.93000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  },
+  {
+    "stop_id": 10,
+    "route_id": 2,
+    "stop_name": "Kandy",
+    "stop_order": 5,
+    "latitude": "6.99000000",
+    "longitude": "79.94000000",
+    "created_at": "2026-03-08T18:46:21.076Z"
+  }
+]
+
+=== BUSES ===
+[]
+
+=== BUS_SCHEDULES ===
+[]
+
+=== CONDUCTORS ===
+[
+  {
+    "conductor_id": 1,
+    "full_name": "Conductor 1",
+    "nic": "199501567891",
+    "phone": "0715000001",
+    "photo_url": "https://example.com/conductor1.jpg",
+    "status": "active",
+    "created_at": "2026-03-08T18:46:21.047Z"
+  },
+  {
+    "conductor_id": 2,
+    "full_name": "Conductor 2",
+    "nic": "199502567892",
+    "phone": "0715000002",
+    "photo_url": "https://example.com/conductor2.jpg",
+    "status": "active",
+    "created_at": "2026-03-08T18:46:21.047Z"
+  },
+  {
+    "conductor_id": 3,
+    "full_name": "Conductor 3",
+    "nic": "199503567893",
+    "phone": "0715000003",
+    "photo_url": "https://example.com/conductor3.jpg",
+    "status": "active",
+    "created_at": "2026-03-08T18:46:21.047Z"
+  },
+  {
+    "conductor_id": 4,
+    "full_name": "Conductor 4",
+    "nic": "199504567894",
+    "phone": "0715000004",
+    "photo_url": "https://example.com/conductor4.jpg",
+    "status": "active",
+    "created_at": "2026-03-08T18:46:21.047Z"
+  },
+  {
+    "conductor_id": 5,
+    "full_name": "Conductor 5",
+    "nic": "199505567895",
+    "phone": "0715000005",
+    "photo_url": "https://example.com/conductor5.jpg",
+    "status": "inactive",
+    "created_at": "2026-03-08T18:46:21.047Z"
+  }
+]
+
+=== DEPOT_COMPANIES ===
+[
+  {
+    "depot_id": 26,
+    "name": "Depot Company 1",
+    "address": "No. 1, Main Road, Colombo 1",
+    "contact_number": "011300001",
+    "created_at": "2026-03-09T07:34:02.671Z"
+  },
+  {
+    "depot_id": 27,
+    "name": "Depot Company 2",
+    "address": "No. 2, Main Road, Colombo 2",
+    "contact_number": "011300002",
+    "created_at": "2026-03-09T07:34:02.671Z"
+  },
+  {
+    "depot_id": 28,
+    "name": "Depot Company 3",
+    "address": "No. 3, Main Road, Colombo 3",
+    "contact_number": "011300003",
+    "created_at": "2026-03-09T07:34:02.671Z"
+  },
+  {
+    "depot_id": 29,
+    "name": "Depot Company 4",
+    "address": "No. 4, Main Road, Colombo 4",
+    "contact_number": "011300004",
+    "created_at": "2026-03-09T07:34:02.671Z"
+  },
+  {
+    "depot_id": 30,
+    "name": "Depot Company 5",
+    "address": "No. 5, Main Road, Colombo 5",
+    "contact_number": "011300005",
+    "created_at": "2026-03-09T07:34:02.671Z"
+  }
+]
+
+=== DRIVERS (sample) ===
+[
+  {
+    "driver_id": 1,
+    "full_name": "Driver 1",
+    "phone": "0770000001"
+  },
+  {
+    "driver_id": 2,
+    "full_name": "Driver 2",
+    "phone": "0770000002"
+  },
+  {
+    "driver_id": 3,
+    "full_name": "Driver 3",
+    "phone": "0770000003"
+  }
+]
+
+=== BUS_LOCATIONS ===
+[]
+
+=== ROUTES COLUMNS ===
+route_id (integer), route_number (character varying), start_location (character varying), end_location (character varying), active_status (boolean), total_distance (numeric), estimated_duration (integer), created_at (timestamp with time zone)
+
+=== ROUTE_STOPS COLUMNS ===
+stop_id (integer), route_id (integer), stop_name (character varying), stop_order (integer), latitude (numeric), longitude (numeric), created_at (timestamp with time zone)
+
+=== BUSES COLUMNS ===
+bus_id (integer), bus_number (character varying), bus_type (character varying), depot_id (integer), created_at (timestamp with time zone)
+
+=== BUS_SCHEDULES COLUMNS ===
+schedule_id (integer), bus_id (integer), route_id (integer), driver_id (integer), conductor_id (integer), trip_no (integer), start_time (time without time zone), end_time (time without time zone), created_at (timestamp with time zone)
+
+=== CONDUCTORS COLUMNS ===
+conductor_id (integer), full_name (character varying), nic (character varying), phone (character varying), photo_url (character varying), status (character varying), created_at (timestamp with time zone)
+
+=== DEPOT_COMPANIES COLUMNS ===
+depot_id (integer), name (character varying), address (character varying), contact_number (character varying), created_at (timestamp with time zone)
+
+=== DRIVERS COLUMNS ===
+driver_id (integer), full_name (character varying), phone (character varying), nic (character varying), photo_url (character varying), password_hash (character varying), created_at (timestamp with time zone)
+
+=== BUS_LOCATIONS COLUMNS ===
+location_id (integer), bus_id (integer), latitude (numeric), longitude (numeric), speed (real), recorded_at (timestamp with time zone)
+
+=== DRIVING_LICENSES COLUMNS ===
+license_id (integer), driver_id (integer), license_number (character varying), expiry_date (date), photo_url (character varying), verified_status (boolean), created_at (timestamp with time zone)
+
+=== ROW COUNTS ===
+routes: 25 rows
+route_stops: 25 rows
+buses: 0 rows
+bus_schedules: 0 rows
+conductors: 25 rows
+depot_companies: 25 rows
+drivers: 27 rows
+bus_locations: 0 rows
+driving_licenses: 25 rows

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import heroBg from '../assets/hero-bg.jpg';
 import { Search, Map, MapPin, Compass, AlertTriangle, Clock, Zap, Star } from 'lucide-react';
-import { GoogleMap, Marker, useLoadScript } from "@react-google-maps/api";
+import { GoogleMap, Marker, useLoadScript, Autocomplete } from "@react-google-maps/api";
 import Button from '../components/common/Button';
 import InputField from '../components/common/InputField';
 import Card from '../components/common/Card';
@@ -15,6 +15,27 @@ const Home = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const [locationStatus, setLocationStatus] = useState('loading');
+  const [autocomplete, setAutocomplete] = useState(null);
+  const navigate = useNavigate();
+
+  const onLoad = (autocompleteInstance) => {
+    setAutocomplete(autocompleteInstance);
+  };
+
+  const onPlaceChanged = () => {
+    if (autocomplete !== null) {
+      const place = autocomplete.getPlace();
+      if (place.geometry) {
+        const destination = {
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng(),
+          address: place.formatted_address
+        };
+        // Navigate to Route Planner with destination data
+        navigate('/planner', { state: { destination } });
+      }
+    }
+  };
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -81,6 +102,34 @@ const Home = () => {
     height: '100%',
   };
 
+  const [upcomingRoutes, setUpcomingRoutes] = useState([]);
+  const [stats, setStats] = useState({ routes: 0, buses: 0, drivers: 0 });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [routesRes, statsRes] = await Promise.all([
+          fetch('http://localhost:4000/site/routes'),
+          fetch('http://localhost:4000/site/stats')
+        ]);
+        
+        const routesData = await routesRes.json();
+        if (routesData.success) {
+          setUpcomingRoutes(routesData.routes.slice(0, 2));
+        }
+
+        const statsData = await statsRes.json();
+        if (statsData.success) {
+          setStats(statsData.stats);
+        }
+      } catch (err) {
+        console.error('Error fetching home data:', err);
+      }
+    };
+    fetchData();
+  }, []);
+
+
   return (
     <div className="pt-16 pb-10">
       {/* Hero Section */}
@@ -103,11 +152,21 @@ const Home = () => {
           </p>
 
           <div className="w-full max-w-3xl bg-white dark:bg-gray-800 p-2 rounded-2xl shadow-xl flex flex-col sm:flex-row gap-2">
-            <InputField
-              icon={Search}
-              placeholder="Enter destination, stop, or route..."
-              className="flex-grow text-gray-900 dark:text-gray-50 border-none shadow-none bg-gray-50/50"
-            />
+            {isLoaded ? (
+              <Autocomplete onLoad={onLoad} onPlaceChanged={onPlaceChanged} className="flex-grow">
+                <InputField
+                  icon={Search}
+                  placeholder="Where are you going?"
+                  className="w-full text-gray-900 dark:text-gray-50 border-none shadow-none bg-gray-50/50"
+                />
+              </Autocomplete>
+            ) : (
+              <InputField
+                icon={Search}
+                placeholder="Enter destination, stop, or route..."
+                className="flex-grow text-gray-900 dark:text-gray-50 border-none shadow-none bg-gray-50/50"
+              />
+            )}
             <Button className="w-full sm:w-auto px-8 py-3 text-base shadow-none">
               Search
             </Button>
@@ -309,28 +368,23 @@ const Home = () => {
                 <Clock className="w-5 h-5 text-blue-400" /> Upcoming Dispatches
               </h3>
               <ul className="space-y-3">
-                <li className="flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-lg block">138</span>
-                    <span className="text-xs text-gray-400">Maharagama - Fort</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-bold text-emerald-400 block">5 min</span>
-                    <span className="text-xs text-gray-400">On time</span>
-                  </div>
-                </li>
-                <li className="flex justify-between items-center pt-2 border-t border-gray-700">
-                  <div>
-                    <span className="font-bold text-lg block">120</span>
-                    <span className="text-xs text-gray-400">Piliyandala - Fort</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-bold text-emerald-400 block">12 min</span>
-                    <span className="text-xs text-gray-400">On time</span>
-                  </div>
-                </li>
+                {upcomingRoutes.length > 0 ? upcomingRoutes.map((route) => (
+                  <li key={route.id} className="flex justify-between items-center border-b border-gray-700 pb-2 last:border-0 last:pb-0">
+                    <div>
+                      <span className="font-bold text-lg block">{route.routeNumber}</span>
+                      <span className="text-xs text-gray-400">{route.startLocation} - {route.endLocation}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-bold text-emerald-400 block">{Math.floor(Math.random() * 15) + 2} min</span>
+                      <span className="text-xs text-gray-400">On time</span>
+                    </div>
+                  </li>
+                )) : (
+                  <p className="text-xs text-gray-400">Loading schedules...</p>
+                )}
               </ul>
             </Card>
+
 
           </div>
         </div>

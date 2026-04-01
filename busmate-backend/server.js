@@ -51,8 +51,11 @@ app.use(cors({
 }))
 app.use(express.json());
 
+const siteRouter = require("./src/routers/siteRouter.js");
+
 app.use("/auth", authRouter);
 app.use("/drivers", driverRouter);
+app.use("/site", siteRouter);
 
 app.get('/', (req, res) => {
     res.json('hi')
@@ -60,6 +63,29 @@ app.get('/', (req, res) => {
 
 // initialize socket handlers (authenticated)
 initSocketServer(io, redis);
+
+// HTTP endpoint: return all bus stops from DB
+app.get('/stops', async (req, res) => {
+    try {
+        const pool = require('./db.js');
+        // Join stops with routes to get the route names/numbers
+        const result = await pool.query(`
+            SELECT 
+                rs.stop_id as id, 
+                r.route_number as route, 
+                rs.stop_name as name, 
+                rs.latitude as lat, 
+                rs.longitude as lng 
+            FROM route_stops rs 
+            JOIN routes r ON rs.route_id = r.route_id
+            WHERE rs.latitude IS NOT NULL AND rs.longitude IS NOT NULL
+        `);
+        return res.json({ success: true, stops: result.rows });
+    } catch (err) {
+        console.error('stops endpoint error', err);
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 // HTTP endpoint: return current positions for a route (reads Redis)
 app.get('/routes/:routeId/positions', async (req, res) => {

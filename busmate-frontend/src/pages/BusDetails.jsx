@@ -1,20 +1,42 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { MapPin, Bus, Users, Clock, Compass, Bell, Play } from 'lucide-react';
+import { MapPin, Bus, Users, Clock, Compass, Bell, Play, Loader2 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
 
 const BusDetails = () => {
   const { id } = useParams();
+  const [busData, setBusData] = useState(null);
+  const [loading, setLoading] = useState(true);
   
-  // Mock Data
-  const busNumber = id || '138';
-  
+  useEffect(() => {
+    const fetchBusDetails = async () => {
+      try {
+        const res = await fetch(`http://localhost:4000/site/buses/${id}`);
+        const data = await res.json();
+        if (data.success) {
+          setBusData(data.bus);
+        }
+      } catch (err) {
+        console.error("Error fetching bus details:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBusDetails();
+  }, [id]);
+
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh]">
+      <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
+      <p className="text-gray-500 font-medium">Loading bus details...</p>
+    </div>
+  );
+
+  if (!busData) return <div className="mt-20 text-center">Bus not found</div>;
+
   const upcomingStops = [
-    { name: 'Townhall Junction', eta: '2 mins', status: 'Next', crowdedness: 'High' },
-    { name: 'Viharamahadevi Park', eta: '6 mins', status: 'Upcoming', crowdedness: 'Medium' },
-    { name: 'Nelum Pokuna', eta: '9 mins', status: 'Upcoming', crowdedness: 'Low' },
-    { name: 'Kollupitiya', eta: '18 mins', status: 'Upcoming', crowdedness: 'Medium' },
+    { name: 'Loading...', eta: '-- mins', status: 'Next', crowdedness: 'Medium' },
   ];
 
   return (
@@ -28,20 +50,20 @@ const BusDetails = () => {
               <Bus className="w-12 h-12 text-white" />
             </div>
             <div>
-              <span className="bg-blue-400 text-blue-900 text-xs font-bold px-2 py-1 rounded-md mb-2 inline-block shadow-sm">Route {busNumber}</span>
-              <h1 className="text-3xl font-extrabold tracking-tight">WP-NC 4832</h1>
-              <p className="text-blue-100 font-medium mt-1">Operator: SLTB • Air Conditioned</p>
+              <span className="bg-blue-400 text-blue-900 text-xs font-bold px-2 py-1 rounded-md mb-2 inline-block shadow-sm">Verified Bus #{busData.id}</span>
+              <h1 className="text-3xl font-extrabold tracking-tight uppercase">{busData.busNumber}</h1>
+              <p className="text-blue-100 font-medium mt-1">Depot: {busData.depotName} • {busData.type || 'Standard'}</p>
             </div>
           </div>
           
           <div className="grid grid-cols-2 gap-4 w-full sm:w-auto">
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20 text-center">
               <p className="text-blue-200 text-xs font-medium uppercase tracking-wider mb-1">Passanger Load</p>
-              <p className="text-xl font-bold flex items-center justify-center gap-1"><Users className="w-5 h-5" /> 78%</p>
+              <p className="text-xl font-bold flex items-center justify-center gap-1"><Users className="w-5 h-5" /> Normal</p>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20 text-center">
               <p className="text-blue-200 text-xs font-medium uppercase tracking-wider mb-1">Speed</p>
-              <p className="text-xl font-bold flex items-center justify-center gap-1"><Compass className="w-5 h-5" /> 45 <span className="text-sm font-normal">km/h</span></p>
+              <p className="text-xl font-bold flex items-center justify-center gap-1"><Compass className="w-5 h-5" /> -- <span className="text-sm font-normal">km/h</span></p>
             </div>
           </div>
         </div>
@@ -70,40 +92,11 @@ const BusDetails = () => {
           </h2>
           
           <Card className="p-6">
-            <div className="relative border-l-2 border-dashed border-gray-200 dark:border-gray-600 ml-3 md:ml-4 space-y-8 pb-4">
-              {upcomingStops.map((stop, idx) => (
-                <div key={idx} className="relative pl-6 md:pl-8">
-                  {/* Timeline dot */}
-                  {stop.status === 'Next' ? (
-                    <span className="absolute -left-[11px] top-1 h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center border-2 border-white ring-2 ring-blue-500">
-                      <span className="h-2.5 w-2.5 rounded-full bg-blue-600 animate-pulse"></span>
-                    </span>
-                  ) : (
-                    <span className="absolute -left-[9px] top-1.5 h-4 w-4 rounded-full bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-500"></span>
-                  )}
-
-                  <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${stop.status === 'Next' ? '' : 'opacity-80'}`}>
-                    <div>
-                      <Link to={`/stop/${stop.name}`} className="font-bold text-gray-900 dark:text-gray-50 text-lg hover:text-blue-600 transition-colors">
-                        {stop.name}
-                      </Link>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
-                        <Users className="w-3.5 h-3.5" /> 
-                        {stop.crowdedness} passenger crowd expected
-                      </p>
-                    </div>
-                    
-                    <div className={`text-left sm:text-right ${stop.status === 'Next' ? 'text-blue-600' : 'text-gray-500 dark:text-gray-400'}`}>
-                      <span className="text-xl font-black block">{stop.eta}</span>
-                      <span className="text-xs font-semibold uppercase tracking-wider">ETA</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-col items-center justify-center py-10 opacity-50">
+              <Clock className="w-10 h-10 mb-2" />
+              <p>Live schedule data unavailable</p>
+              <Link to="/live" className="text-blue-600 hover:underline mt-2 text-sm">Track on full map</Link>
             </div>
-            <Button variant="secondary" className="w-full mt-4 border-dashed">
-              Load all stops
-            </Button>
           </Card>
         </div>
 

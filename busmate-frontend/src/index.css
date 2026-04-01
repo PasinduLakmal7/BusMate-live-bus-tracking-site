@@ -83,3 +83,80 @@ img {
   animation: pulse-dot 1.25s cubic-bezier(0.455, 0.03, 0.515, 0.955) -0.4s infinite;
   border: 2px solid white;
 }
+
+/* --- Google Places Autocomplete Styling (Solid & Mobile Optimized) --- */
+.pac-container {
+  background-color: #ffffff !important; /* Force solid white background */
+  border: 1px solid #e5e7eb !important; /* gray-200 */
+  border-radius: 1rem !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2) !important;
+  font-family: inherit !important;
+  z-index: 99999 !important; /* Extreme high z-index for mobile */
+  margin-top: 4px !important;
+  overflow: hidden !important;
+}
+
+/* Dark Mode Support for the dropdown */
+.dark .pac-container {
+  background-color: #1f2937 !important; /* gray-800 */
+  border-color: #374151 !important; /* gray-700 */
+  color: #ffffff !important;
+}
+
+.pac-item {
+  padding: 14px 16px !important; /* Larger touch area for mobile */
+  cursor: pointer !important;
+  border-top: 1px solid #f3f4f6 !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.dark .pac-item {
+  border-top-color: #374151 !important;
+  color: #d1d5db !important;
+}
+
+.pac-item:hover {
+  background-color: #f9fafb !important;
+}
+
+.dark .pac-item:hover {
+  background-color: #374151 !important;
+}
+
+.pac-item-query {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #111827 !important;
+  padding-right: 4px !important;
+}
+
+.dark .pac-item-query {
+  color: #ffffff !important;
+}
+
+.pac-matched {
+  color: #3b82f6 !important; /* blue-500 */
+}
+
+/* Specific mobile width fix to prevent cut-offs */
+@media (max-width: 640px) {
+  .pac-container {
+    width: calc(100% - 32px) !important;
+    left: 16px !important;
+    max-width: none !important;
+  }
+}
+
+/* Cleanup: Hide Google branding and error overlays */
+.pac-container:after {
+  display: none !important;
+}
+
+.gm-err-container, 
+.gm-err-content, 
+.gm-err-message, 
+.gm-err-autocomplete,
+.gm-err-title {
+  display: none !important;
+}
