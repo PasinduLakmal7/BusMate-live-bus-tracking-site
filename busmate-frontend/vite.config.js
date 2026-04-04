@@ -17,6 +17,7 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: [
       'all',
+      '2c4c-2401-dd00-10-20-d9c3-7641-a42c-71e8.ngrok-free.app',
       '4fbe-103-21-166-1.ngrok-free.app',
       '5a3c-2402-4000-2141-b362-d11c-7dc6-c14c-b194.ngrok-free.app',
       '5732-2402-4000-2142-3e0-fdde-99d4-3432-ed5c.ngrok-free.app',

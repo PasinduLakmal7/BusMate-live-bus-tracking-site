@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MapPin, Navigation, ArrowDownUp, Clock, Zap, DollarSign, ChevronDown, Map as MapIcon } from 'lucide-react';
+import { MapPin, Navigation, ArrowDownUp, Clock, Zap, DollarSign, ChevronDown, Map as MapIcon, ArrowRight, AlertTriangle, Bus } from 'lucide-react';
 import { GoogleMap, Marker, useLoadScript, Polyline, InfoWindow, OverlayView, Autocomplete, DirectionsRenderer, DirectionsService } from "@react-google-maps/api";
 import Button from '../components/common/Button';
 import InputField from '../components/common/InputField';
@@ -18,6 +18,7 @@ const defaultCenter = { lat: 6.9271, lng: 79.8612 }; // Colombo
 // Mock data removed to show only live location correctly
 
 const RoutePlanner = () => {
+  const API_URL = '/api';
   const [mapState, setMapState] = useState('default'); // 'default', 'active', 'results'
   const [showResults, setShowResults] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
@@ -36,11 +37,32 @@ const RoutePlanner = () => {
   const [directionsResponse, setDirectionsResponse] = useState(null);
   const [distance, setDistance] = useState("");
   const [duration, setDuration] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [isFindingRoutes, setIsFindingRoutes] = useState(false);
+
+  // Helper to extract all transit steps from Google Directions response
+  const getAllTransitSteps = (response) => {
+    if (!response || !response.routes || response.routes.length === 0) return [];
+    const leg = response.routes[0].legs[0];
+    return leg.steps.filter(step => step.travel_mode === 'TRANSIT');
+  };
 
   const calculateRoute = async () => {
     if (!userLocation || !destination) return;
+    setIsFindingRoutes(true);
 
     const directionsService = new window.google.maps.DirectionsService();
+
+    // Fetch bus suggestions from our backend first
+    try {
+      const suggestRes = await fetch(`${API_URL}/site/suggest?startLat=${userLocation.lat}&startLng=${userLocation.lng}&endLat=${destination.lat}&endLng=${destination.lng}`);
+      const suggestData = await suggestRes.json();
+      if (suggestData.success) {
+        setSuggestions(suggestData.suggestions);
+      }
+    } catch (err) {
+      console.error("Suggestion fetch failed:", err);
+    }
 
     // Helper to Promisify the Directions Service
     const getRoute = (mode) => {
@@ -73,7 +95,7 @@ const RoutePlanner = () => {
       }
     } catch (error) {
       console.warn("Public Transit route not found, falling back to Driving...", error);
-      
+
       try {
         // 2. Fallback to Driving
         const results = await getRoute(window.google.maps.TravelMode.DRIVING);
@@ -89,6 +111,8 @@ const RoutePlanner = () => {
         setDistance("");
         setDuration("");
       }
+    } finally {
+      setIsFindingRoutes(false);
     }
   };
 
@@ -366,81 +390,144 @@ const RoutePlanner = () => {
             <div className="space-y-4 animate-in slide-in-from-bottom-4 fade-in duration-300">
               <h3 className="font-bold text-gray-900 dark:text-gray-50 flex justify-between items-center">
                 Suggested Routes
-                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">Sorted by best match</span>
+                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  {suggestions.length > 0 ? `Found ${suggestions.length} options` : 'Finding best match...'}
+                </span>
               </h3>
 
-              {/* Route Option 1 (Fastest) */}
-              <Card hover className={`p-4 border-l-4 border-l-emerald-500 transition-all cursor-pointer ${showResults ? 'ring-2 ring-emerald-500/20' : ''}`} onClick={() => setMapState('results')}>
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Fastest</span>
-                    <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">{duration || "32 min"}</span>
+              {isFindingRoutes ? (
+                <div className="py-12 text-center">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                  <p className="text-sm text-gray-500">Searching all Sri Lankan bus routes...</p>
+                </div>
+              ) : suggestions.length > 0 ? (
+                suggestions.map((route, idx) => (
+                  <Card
+                    key={route.id}
+                    hover
+                    className={`p-4 border-l-4 transition-all cursor-pointer ${idx === 0 ? 'border-l-emerald-500 shadow-md ring-1 ring-emerald-500/10' : 'border-l-blue-500'}`}
+                    onClick={() => setMapState('results')}
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-2">
+                        {idx === 0 && (
+                          <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Fastest</span>
+                        )}
+                        <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">{route.duration}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400 mb-0.5">Fare</p>
+                        <span className="text-sm font-bold text-gray-900 dark:text-gray-50">{route.fare}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm mb-4">
+                      <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-xl border border-blue-100 dark:border-blue-800">
+                        <span className="bg-blue-600 text-white w-8 h-5 flex items-center justify-center rounded text-[10px] font-black">{route.routeNumber}</span>
+                        <span className="text-xs font-bold text-blue-700 dark:text-blue-400">{route.name}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 mb-4">
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                        <span className="truncate">From: {currentAddress?.split(',')[0] || route.start_stop}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                        <span className="truncate">To: {destAddress?.split(',')[0] || route.end_stop}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-2 rounded-lg">
+                      <div className="flex gap-4 text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-tight">
+                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {route.distance}</span>
+                        <span className="flex items-center gap-1">
+                          <Zap className={`w-3 h-3 ${route.crowd === 'High' ? 'text-red-500' : 'text-emerald-500'}`} />
+                          {route.crowd} Crowd
+                        </span>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-gray-300" />
+                    </div>
+                  </Card>
+                ))
+              ) : directionsResponse && getAllTransitSteps(directionsResponse).length > 0 ? (
+                /* SMART FALLBACK: Map through every transit step (bus) required to complete the journey */
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-2 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-800 dark:text-amber-400">Routes outside live-tracking fleet</p>
+                      <p className="text-[10px] text-amber-700/70 dark:text-amber-400/70 mt-0.5">Google Maps suggests taking the following buses.</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-400 mb-0.5 text-right">Fare</p>
-                    <span className="text-sm font-bold text-gray-900 dark:text-gray-50">Rs. 110.00</span>
-                  </div>
-                </div>
+                  {getAllTransitSteps(directionsResponse).map((step, idx) => (
+                    <Card
+                      key={idx}
+                      hover
+                      className="p-4 border-l-4 border-l-amber-500 animate-in fade-in duration-500"
+                      onClick={() => setMapState('results')}
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Step {idx + 1}</span>
+                          <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">{step.duration?.text || "N/A"}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400 mb-0.5 tracking-tight">Est. Fare</p>
+                          <span className="text-sm font-bold text-gray-900 dark:text-gray-50">
+                            Rs. {(30 + (parseFloat(step.distance?.text || 0) * 13)).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
 
-                <div className="flex items-center gap-2 text-sm mb-4">
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold">138</span>
-                  <span className="text-gray-400">→</span>
-                  <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded text-xs font-medium">Walk 5m</span>
-                  <span className="text-gray-400">→</span>
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold">120</span>
-                </div>
+                      <div className="flex items-center gap-2 text-sm mb-4">
+                        <div className="bg-gray-100 dark:bg-gray-800 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center gap-2 flex-grow">
+                          {step.transit?.line?.short_name || step.transit?.line?.name ? (
+                            <span className="bg-blue-600 text-white min-w-[32px] h-5 px-1 flex items-center justify-center rounded text-[10px] font-black">
+                              {step.transit?.line?.short_name || step.transit?.line?.name}
+                            </span>
+                          ) : (
+                            <Bus className="w-4 h-4 text-blue-600" />
+                          )}
+                          <div className="truncate">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Recommended Service</p>
+                            <p className="text-xs font-bold text-gray-900 dark:text-gray-100 truncate">{step.transit?.line?.agencies?.[0]?.name || "National Public Transport"}</p>
+                          </div>
+                        </div>
+                      </div>
 
-                <div className="flex gap-4 text-xs text-gray-500 dark:text-gray-400">
-                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 10:15 AM - 10:50 AM</span>
-                  <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-amber-500" /> Medium Crowd</span>
-                </div>
-              </Card>
+                      <div className="flex flex-col gap-1.5 mb-4">
+                        <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+                          <span className="truncate">From: {step.transit?.departure_stop?.name || "Departure Stop"}</span>
+                        </div>
+                        <div className="flex col gap-2 text-[11px] font-bold pl-3 border-l-2 border-dotted border-gray-200 dark:border-gray-700 ml-[3px] py-1 text-gray-400">
+                          <span className="truncate">{step.transit?.num_stops} stops</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
+                          <span className="truncate">To: {step.transit?.arrival_stop?.name || "Arrival Stop"}</span>
+                        </div>
+                      </div>
 
-              {/* Route Option 2 (Least Crowded) */}
-              <Card hover className="p-4 border-l-4 border-l-transparent">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">Comfortable</span>
-                    <span className="font-bold text-gray-900 dark:text-gray-50 text-lg">45 min</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">Rs. 150</span>
-                  </div>
+                      <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-2 rounded-lg">
+                        <div className="flex gap-4 text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-tight">
+                          <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {step.distance?.text || "N/A"}</span>
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Standard Timetable</span>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-gray-300" />
+                      </div>
+                    </Card>
+                  ))}
                 </div>
-
-                <div className="flex items-center gap-2 text-sm mb-4">
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold">EX-1</span>
-                  <span className="text-gray-400">→</span>
-                  <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded text-xs font-medium">Walk 2m</span>
+              ) : (
+                <div className="p-8 text-center bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-dashed border-blue-200 dark:border-blue-800">
+                  <AlertTriangle className="w-10 h-10 text-blue-400 mx-auto mb-3" />
+                  <p className="text-sm font-bold text-blue-800 dark:text-blue-300">No direct bus routes found</p>
+                  <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1 uppercase tracking-wider font-extrabold">Try adjusting your start or end locations</p>
                 </div>
-
-                <div className="flex gap-4 text-xs text-gray-500 dark:text-gray-400">
-                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 10:30 AM - 11:15 AM</span>
-                  <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-emerald-500" /> Low Crowd</span>
-                </div>
-              </Card>
-
-              {/* Route Option 3 (Cheapest) */}
-              <Card hover className="p-4 border-l-4 border-l-transparent opacity-80">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-bold px-2 py-1 rounded flex items-center gap-1"><DollarSign className="w-3 h-3" /> Cheapest</span>
-                    <span className="font-bold text-gray-900 dark:text-gray-50 text-lg">55 min</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">Rs. 80</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 text-sm mb-4">
-                  <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs font-bold">120</span>
-                </div>
-
-                <div className="flex gap-4 text-xs text-gray-500 dark:text-gray-400">
-                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> 10:10 AM - 11:05 AM</span>
-                  <span className="flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-red-500" /> High Crowd</span>
-                </div>
-              </Card>
+              )}
             </div>
           )}
         </div>

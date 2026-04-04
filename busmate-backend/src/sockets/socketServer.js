@@ -7,8 +7,8 @@ const LIVE_TTL_SECONDS = process.env.LIVE_TTL_SECONDS
     ? parseInt(process.env.LIVE_TTL_SECONDS)
     : 15;
 
-// DB throttle: write to bus_locations at most once per 5 minutes per bus 
-const DB_WRITE_INTERVAL_SECONDS = 100;
+// DB throttle: write to bus_locations at most once per 10 seconds per bus 
+const DB_WRITE_INTERVAL_SECONDS = 10;
 
 // In-memory throttle fallback (busId -> lastWriteTs)
 const memoryThrottle = new Map();
@@ -119,24 +119,16 @@ module.exports = function initSocketServer(io) {
                     }
 
                     if (shouldWrite) {
-                        // UPSERT: Insert or update if bus_id already exists
-                        // Note: Assumes bus_id is UNIQUE or a PRIMARY KEY in bus_locations
+                        // Standard INSERT: Recorded as a history log. 
+                        // The frontend uses DISTINCT ON to find the latest valid location.
                         pool.query(
-                            `INSERT INTO bus_locations (bus_id, latitude, longitude, speed, recorded_at)
-                             VALUES ($1, $2, $3, $4, NOW())
-                             ON CONFLICT (bus_id) DO UPDATE 
-                             SET latitude = EXCLUDED.latitude, 
-                                 longitude = EXCLUDED.longitude, 
-                                 speed = EXCLUDED.speed, 
-                                 recorded_at = NOW()`,
-                            [pos.busId, pos.lat, pos.lon, pos.speed]
+                            `INSERT INTO bus_locations (bus_id, latitude, longitude, speed, heading, recorded_at)
+                             VALUES ($1, $2, $3, $4, $5, NOW())`,
+                            [pos.busId, pos.lat, pos.lon, pos.speed, pos.heading]
                         ).then(() => {
-                            console.log(`[db] SUCCESS: bus_locations UPSERT bus_id=${pos.busId} lat=${pos.lat} lon=${pos.lon}`);
+                            console.log(`[db] SUCCESS: bus_locations log created for bus_id=${pos.busId}`);
                         }).catch((err) => {
-                            console.error('[db] ERROR: bus_locations UPSERT failed:', err.message);
-                            if (err.message.includes('constraint')) {
-                                console.warn('[db] Ensure bus_id has a UNIQUE constraint in bus_locations table!');
-                            }
+                            console.error('[db] ERROR: bus_locations log failed:', err.message);
                         });
                     }
                 } else {

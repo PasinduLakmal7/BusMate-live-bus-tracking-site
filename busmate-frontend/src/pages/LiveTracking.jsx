@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Map as MapIcon, Filter, Layers, Crosshair, Bus, X, Users, Zap, Clock, ChevronRight } from 'lucide-react';
-import { GoogleMap, Marker, useLoadScript, InfoWindow, Autocomplete } from "@react-google-maps/api";
+import { GoogleMap, Marker, useLoadScript, InfoWindow, Autocomplete, Polyline, OverlayView } from "@react-google-maps/api";
 import { useNavigate } from 'react-router-dom';
 import io from "socket.io-client";
 import Button from '../components/common/Button';
@@ -46,7 +46,86 @@ const darkMapStyles = [
 
 // Mock Bus Stops removed - Data now fetched from DB
 
+// ── Smooth Animation Marker Component (Precision 360° Rotation Version) ──
+const SmoothMarker = ({ bus, onClick }) => {
+  const [pos, setPos] = useState({ lat: bus.lat, lng: bus.lon });
+  const [heading, setHeading] = useState(0);
+
+  useEffect(() => {
+    let start = null;
+    let animationFrameId;
+    const duration = 2000; // Match fetch/simulate interval (2sec)
+    const initialPos = { ...pos };
+    const targetPos = { lat: bus.lat, lng: bus.lon };
+
+    const animate = (timestamp) => {
+      if (!start) start = timestamp;
+      const progress = Math.min((timestamp - start) / duration, 1);
+
+      const nextLat = initialPos.lat + (targetPos.lat - initialPos.lat) * progress;
+      const nextLng = initialPos.lng + (targetPos.lng - initialPos.lng) * progress;
+
+      setPos({ lat: nextLat, lng: nextLng });
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(animate);
+      }
+    };
+
+    // We parse floats and safely avoid tiny javascript jitter that causes stationary buses to spin/wiggle
+    const diffLat = Math.abs(parseFloat(targetPos.lat) - parseFloat(initialPos.lat));
+    const diffLng = Math.abs(parseFloat(targetPos.lng) - parseFloat(initialPos.lng));
+
+    if (diffLat > 0.0000001 || diffLng > 0.0000001) {
+      // LOGIC: Calculate the precise angle of movement on the screen.
+      // This stops "drifting" (sliding sideways around curves) by locking the rotation
+      const dy = parseFloat(targetPos.lat) - parseFloat(initialPos.lat);
+      const dx = parseFloat(targetPos.lng) - parseFloat(initialPos.lng);
+      const visualHeading = (Math.atan2(dx, dy) * 180) / Math.PI;
+      setHeading(visualHeading);
+
+      animationFrameId = requestAnimationFrame(animate);
+    }
+
+    return () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+  }, [bus.lat, bus.lon]);
+
+  return (
+    <OverlayView
+      position={pos}
+      mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+      getPixelPositionOffset={(width, height) => ({ x: -(width / 2), y: -(height / 2) })}
+    >
+      <div
+        onClick={() => onClick(bus)}
+        className="cursor-pointer flex flex-col items-center"
+      >
+        <img
+          src={busIcon}
+          alt="bus"
+          style={{
+            width: '45px',
+            height: '45px',
+            // Image faces Right (+90°). Subtract 90 to match 0° North vector.
+            transform: `rotate(${heading - 90}deg)`,
+            transition: 'transform 0.5s ease-in-out'
+          }}
+        />
+      </div>
+    </OverlayView>
+  );
+};
+
+
+
 const LiveTracking = () => {
+  const savedCenter = localStorage.getItem('busmate_map_center');
+  const savedZoom = localStorage.getItem('busmate_map_zoom');
+
+  const [center, setCenter] = useState(savedCenter ? JSON.parse(savedCenter) : { lat: 6.8403, lng: 79.9298 });
+  const [zoom, setZoom] = useState(savedZoom ? parseInt(savedZoom) : 13);
+
   const [showFilters, setShowFilters] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState('All');
   const [busStops, setBusStops] = useState([]);
@@ -57,9 +136,18 @@ const LiveTracking = () => {
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const [socketStatus, setSocketStatus] = useState('connecting');
   const [userLocation, setUserLocation] = useState(null);
+  const [useRadiusFilter, setUseRadiusFilter] = useState(false);
+  const [showStops, setShowStops] = useState(false);
+  const [routePath, setRoutePath] = useState([]);
+  const [routeSearchQuery, setRouteSearchQuery] = useState('');
+  const [stopSearchQuery, setStopSearchQuery] = useState('');
+  const [isRouteDropdownOpen, setIsRouteDropdownOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('All');
+  const RADIUS_LIMIT_KM = 10;
   const navigate = useNavigate();
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  // Use a relative path prefix for Vite's proxy (see vite.config.js)
+  const API_URL = '/api';
 
   // Dark mode observer
   useEffect(() => {
@@ -79,41 +167,180 @@ const LiveTracking = () => {
 
   // Fetch Bus Stops and Routes from Backend
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchStaticData = async () => {
       try {
-        // Fetch Stops
         const stopsRes = await fetch(`${API_URL}/stops`);
         const stopsData = await stopsRes.json();
         if (stopsData.success && stopsData.stops) {
           const stopsMap = new Map();
           stopsData.stops.forEach((stop) => {
             if (stopsMap.has(stop.id)) {
-               stopsMap.get(stop.id).routes.push(stop.route);
+              stopsMap.get(stop.id).routes.push(stop.route);
             } else {
-               stopsMap.set(stop.id, {
-                 id: stop.id,
-                 name: stop.name,
-                 lat: parseFloat(stop.lat),
-                 lng: parseFloat(stop.lng),
-                 routes: [stop.route]
-               });
+              stopsMap.set(stop.id, {
+                id: stop.id,
+                name: stop.name,
+                lat: parseFloat(stop.lat),
+                lng: parseFloat(stop.lng),
+                routes: [stop.route]
+              });
             }
           });
           setBusStops(Array.from(stopsMap.values()));
         }
 
-        // Fetch Routes
         const routesRes = await fetch(`${API_URL}/site/routes`);
         const routesData = await routesRes.json();
         if (routesData.success) {
           setAllRoutes(routesData.routes);
         }
       } catch (err) {
-        console.error("Failed to fetch map data:", err);
+        console.error("Failed to fetch static map data:", err);
       }
     };
-    fetchData();
+
+    const fetchLiveLocations = async () => {
+      try {
+        const locationsRes = await fetch(`${API_URL}/buses/locations`);
+        const locationsData = await locationsRes.json();
+        if (locationsData.success && locationsData.locations) {
+          setNearbyBuses(locationsData.locations.map(loc => ({
+            ...loc,
+            lat: parseFloat(loc.lat),
+            lon: parseFloat(loc.lon),
+            speed: parseFloat(loc.speed || 0),
+            distance: 0
+          })));
+        }
+      } catch (err) {
+        console.error("Failed to fetch live locations:", err);
+      }
+    };
+
+    fetchStaticData();
+
+    // Initial fetch for all buses
+    const fetchInitialLocations = async () => {
+      try {
+        const res = await fetch(`${API_URL}/buses/locations`);
+        const data = await res.json();
+        if (data.success && data.locations) {
+          const formatted = data.locations.map(loc => ({
+            ...loc,
+            lat: parseFloat(loc.lat),
+            lon: parseFloat(loc.lon),
+            speed: parseFloat(loc.speed || 0),
+            distance: 0
+          }));
+          setNearbyBuses(formatted);
+        }
+      } catch (err) {
+        console.error("Initial location fetch failed:", err);
+      }
+    };
+    fetchInitialLocations();
+
+    // Setup Socket.io for Real-time Streaming
+    const socket = io('/', { path: '/socket.io' });
+
+    socket.on('bus:location', (update) => {
+      setNearbyBuses(prev => {
+        const exists = prev.find(b => b.id === update.id || b.busId === update.busId);
+        if (exists) {
+          return prev.map(b => (b.id === update.id || b.busId === update.busId) ? {
+            ...b,
+            lat: update.lat,
+            lon: update.lon,
+            speed: update.speed,
+            heading: update.heading
+          } : b);
+        } else {
+          // If a new bus comes online, add it!
+          return [...prev, {
+            ...update,
+            lat: parseFloat(update.lat),
+            lon: parseFloat(update.lon),
+            speed: parseFloat(update.speed || 0),
+            distance: 0
+          }];
+        }
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, [API_URL]);
+
+  // Fetch Route Path for Polyline when route is selected
+  useEffect(() => {
+    const fetchRoutePath = async () => {
+      if (selectedRoute === 'All') {
+        setRoutePath([]);
+        return;
+      }
+      try {
+        // Find the route ID for the selected routeNumber
+        const routeObj = allRoutes.find(r => String(r.routeNumber) === String(selectedRoute));
+        if (!routeObj) return;
+
+        const res = await fetch(`${API_URL}/site/routes/${routeObj.id}`);
+        const data = await res.json();
+        if (data.success && data.route?.stops && data.route.stops.length >= 2) {
+          const stops = data.route.stops
+            .filter(s => s.lat && s.lng)
+            .map(s => ({ lat: parseFloat(s.lat), lng: parseFloat(s.lng) }));
+
+          const isExpressway = String(selectedRoute).startsWith("EX-");
+
+          // OPTIMIZATION: Use Google Directions Service to get exact road-snapped path
+          const directionsService = new window.google.maps.DirectionsService();
+
+          const origin = stops[0];
+          const destination = stops[stops.length - 1];
+          const waypoints = stops.slice(1, -1).map(s => ({
+            location: new window.google.maps.LatLng(s.lat, s.lng),
+            stopover: true
+          }));
+
+          directionsService.route(
+            {
+              origin: new window.google.maps.LatLng(origin.lat, origin.lng),
+              destination: new window.google.maps.LatLng(destination.lat, destination.lng),
+              waypoints: waypoints,
+              travelMode: window.google.maps.TravelMode.DRIVING,
+              avoidHighways: !isExpressway,
+              optimizeWaypoints: true
+            },
+            (result, status) => {
+              if (status === window.google.maps.DirectionsStatus.OK) {
+                // Extract points from the result
+                const fullPath = [];
+                const legs = result.routes[0].legs;
+                for (let i = 0; i < legs.length; i++) {
+                  const steps = legs[i].steps;
+                  for (let j = 0; j < steps.length; j++) {
+                    const nextSeg = steps[j].path;
+                    for (let k = 0; k < nextSeg.length; k++) {
+                      fullPath.push({ lat: nextSeg[k].lat(), lng: nextSeg[k].lng() });
+                    }
+                  }
+                }
+                setRoutePath(fullPath);
+              } else {
+                // Fallback to straight lines if directions fail
+                setRoutePath(stops);
+                console.warn("Directions request failed due to " + status);
+              }
+            }
+          );
+        }
+      } catch (err) {
+        console.error("Failed to fetch route path:", err);
+      }
+    };
+    if (isLoaded) fetchRoutePath();
+  }, [selectedRoute, allRoutes, API_URL, isLoaded]);
 
 
   // Fetch User Location
@@ -134,15 +361,16 @@ const LiveTracking = () => {
 
   // Socket.io for real-time bus updates
   useEffect(() => {
-    const socket = io("/", { auth: { admin: true } });
+    // Use relative path for socket (proxied via Vite)
+    const socket = io({ auth: { admin: true } });
     socket.on("connect", () => setSocketStatus('connected'));
     socket.on("connect_error", () => setSocketStatus('error'));
     socket.on("bus:location", (data) => {
       setNearbyBuses((prev) => {
-        const index = prev.findIndex(b => b.driverId === data.driverId);
+        const index = prev.findIndex(b => b.busId === data.busId);
         let dist = 0;
         if (userLocation) {
-            dist = calculateDistance(userLocation.lat, userLocation.lng, data.lat, data.lon);
+          dist = calculateDistance(userLocation.lat, userLocation.lng, data.lat, data.lon);
         }
         const updatedBus = { ...data, distance: dist };
         if (index !== -1) {
@@ -157,20 +385,66 @@ const LiveTracking = () => {
   }, [API_URL]);
 
   const mapContainerStyle = useMemo(() => ({ width: '100%', height: '100%' }), []);
-  
-  // Center map on user location if available, else fallback to Colombo
-  const center = useMemo(() => userLocation || { lat: 6.9271, lng: 79.8612 }, [userLocation]);
 
   const onMapLoad = useCallback((mapInstance) => setMap(mapInstance), []);
 
   const handleRecenter = () => {
-    if (map) { map.panTo(center); map.setZoom(13); }
+    if (map && userLocation) {
+      map.panTo(userLocation);
+      map.setZoom(13);
+    }
   };
 
-  // Filter buses by selected route
-  const filteredBuses = selectedRoute === 'All'
-    ? nearbyBuses
-    : nearbyBuses.filter(b => b.routeId === selectedRoute);
+  // Filter buses by selected route and optional distance (10km)
+  const filteredBuses = useMemo(() => {
+    let list = nearbyBuses;
+
+    // Filter by route
+    if (selectedRoute !== 'All') {
+      const routeObj = allRoutes.find(r => String(r.routeNumber) === String(selectedRoute));
+      const targetId = routeObj ? routeObj.id : selectedRoute;
+      list = list.filter(b => String(b.routeId) === String(targetId));
+    }
+
+    // Filter by status (Active > 1km/h, Idle <= 1km/h)
+    if (statusFilter === 'Active') {
+      list = list.filter(b => (b.speed || 0) > 1);
+    } else if (statusFilter === 'Idle') {
+      list = list.filter(b => (b.speed || 0) <= 1);
+    }
+
+    // Filter by 10km radius if active
+    if (useRadiusFilter && userLocation) {
+      list = list.filter(b => {
+        const dist = calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lon);
+        return dist <= RADIUS_LIMIT_KM;
+      });
+    }
+
+    return list;
+  }, [nearbyBuses, selectedRoute, statusFilter, useRadiusFilter, userLocation]);
+
+  // Filter routes for the searchable dropdown
+  const filteredRoutesDropdown = useMemo(() => {
+    if (!routeSearchQuery) return allRoutes;
+    return allRoutes.filter(r =>
+      r.routeNumber.toLowerCase().includes(routeSearchQuery.toLowerCase()) ||
+      r.startLocation.toLowerCase().includes(routeSearchQuery.toLowerCase()) ||
+      r.endLocation.toLowerCase().includes(routeSearchQuery.toLowerCase())
+    );
+  }, [allRoutes, routeSearchQuery]);
+
+  // Filter bus stops for the sidebar based on selected route and search query
+  const filteredSidebarStops = useMemo(() => {
+    let list = busStops;
+    if (selectedRoute !== 'All') {
+      list = list.filter(stop => stop.routes.includes(selectedRoute));
+    }
+    if (stopSearchQuery) {
+      list = list.filter(stop => stop.name.toLowerCase().includes(stopSearchQuery.toLowerCase()));
+    }
+    return list;
+  }, [busStops, selectedRoute, stopSearchQuery]);
 
   return (
     <div className="relative h-[calc(100vh)] w-full overflow-hidden">
@@ -181,8 +455,22 @@ const LiveTracking = () => {
           <GoogleMap
             mapContainerStyle={mapContainerStyle}
             center={center}
-            zoom={13}
+            zoom={zoom}
             onLoad={onMapLoad}
+            onDragEnd={() => {
+              if (map) {
+                const newCenter = map.getCenter().toJSON();
+                setCenter(newCenter);
+                localStorage.setItem('busmate_map_center', JSON.stringify(newCenter));
+              }
+            }}
+            onZoomChanged={() => {
+              if (map) {
+                const newZoom = map.getZoom();
+                setZoom(newZoom);
+                localStorage.setItem('busmate_map_zoom', newZoom.toString());
+              }
+            }}
             options={{
               disableDefaultUI: true,
               zoomControl: false,
@@ -190,19 +478,27 @@ const LiveTracking = () => {
               styles: isDarkMode ? darkMapStyles : [],
             }}
           >
-            {/* Live bus markers */}
+            {/* Live bus markers (Animated for Smoothness) */}
             {filteredBuses.map((bus) => (
-              <Marker
-                key={bus.driverId}
-                position={{ lat: bus.lat, lng: bus.lon }}
-                icon={{
-                  url: busIcon,
-                  scaledSize: new window.google.maps.Size(55, 45),
-                  anchor: new window.google.maps.Point(27, 22),
-                }}
-                onClick={() => { setSelectedBus(bus); setSelectedStop(null); }}
+              <SmoothMarker
+                key={bus.busId || bus.driverId}
+                bus={bus}
+                onClick={(b) => { setSelectedBus(b); setSelectedStop(null); }}
               />
             ))}
+
+            {/* Route Polyline Path */}
+            {routePath.length > 0 && (
+              <Polyline
+                path={routePath}
+                options={{
+                  strokeColor: "#2563eb",
+                  strokeOpacity: 0.8,
+                  strokeWeight: 4,
+                  geodesic: true,
+                }}
+              />
+            )}
 
             {/* User Location Marker */}
             {userLocation && (
@@ -216,18 +512,21 @@ const LiveTracking = () => {
               />
             )}
 
-            {/* Bus stop markers */}
-            {busStops.map((stop) => (
-              <Marker
-                key={stop.id}
-                position={{ lat: stop.lat, lng: stop.lng }}
-                icon={{
-                  url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
-                  scaledSize: new window.google.maps.Size(28, 28),
-                }}
-                onClick={() => { setSelectedStop(stop); setSelectedBus(null); }}
-              />
-            ))}
+            {/* Bus stop markers (Only if enabled or route selected) */}
+            {(showStops || (selectedRoute !== 'All' && routePath.length > 0)) && busStops
+              .filter(stop => selectedRoute === 'All' || stop.routes.includes(selectedRoute))
+              .map((stop) => (
+                <Marker
+                  key={stop.id}
+                  position={{ lat: stop.lat, lng: stop.lng }}
+                  icon={{
+                    url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
+                    scaledSize: new window.google.maps.Size(18, 18),
+                    anchor: new window.google.maps.Point(9, 9)
+                  }}
+                  onClick={() => { setSelectedStop(stop); setSelectedBus(null); }}
+                />
+              ))}
 
             {/* Bus Info Window */}
             {selectedBus && (
@@ -240,13 +539,15 @@ const LiveTracking = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                         <span style={{ background: '#2563eb', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4 }}>
-                          ROUTE {selectedBus.routeId || '138'}
+                          ROUTE {selectedBus.routeNumber}
                         </span>
                         <span style={{ color: '#9ca3af', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>
-                          {selectedBus.busId || 'NA-1234'}
+                          {selectedBus.busId}
                         </span>
                       </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>To Fort Terminal</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>
+                        To {selectedBus.destination || 'Terminal'}
+                      </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 22, fontWeight: 800, color: '#2563eb', lineHeight: 1 }}>5<span style={{ fontSize: 10, fontWeight: 600 }}> min</span></div>
@@ -318,24 +619,59 @@ const LiveTracking = () => {
 
       {/* ── Top Bar (Navbar Overlay) ── */}
       <div className="absolute top-16 left-4 right-4 md:left-6 md:right-6 z-20 flex items-center gap-3 pt-4">
-        {/* Route Selector */}
-        <div className="flex-grow bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-2xl shadow-xl flex items-center pl-4 pr-3 py-1 border border-gray-100 dark:border-gray-800 max-w-xs transition-all">
-          <div className="flex items-center gap-2 mr-3">
-            <div className={`w-2 h-2 rounded-full ${socketStatus === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></div>
+        {/* Custom Searchable Route Selector */}
+        <div className="relative flex-grow max-w-xs z-30">
+          <div
+            onClick={() => setIsRouteDropdownOpen(!isRouteDropdownOpen)}
+            className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-2xl shadow-xl flex items-center pl-4 pr-3 py-2.5 border border-gray-100 dark:border-gray-800 cursor-pointer transition-all hover:border-blue-500/50"
+          >
+            <div className={`w-2 h-2 rounded-full mr-3 ${socketStatus === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></div>
+            <Filter className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" />
+            <span className="flex-grow text-gray-700 dark:text-gray-300 font-bold text-sm truncate">
+              {selectedRoute === 'All' ? 'All Live Routes' : selectedRoute}
+            </span>
+            <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isRouteDropdownOpen ? 'rotate-90' : ''}`} />
           </div>
-          <Filter className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" />
-            <select
-              className="w-full bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-300 py-2.5 outline-none font-semibold text-sm cursor-pointer"
-              value={selectedRoute}
-              onChange={(e) => setSelectedRoute(e.target.value)}
-            >
-              <option value="All">All Live Routes</option>
-              {allRoutes.map(route => (
-                <option key={route.id} value={route.routeNumber}>
-                  {route.routeNumber} – {route.startLocation} / {route.endLocation}
-                </option>
-              ))}
-            </select>
+
+          {/* Dropdown Menu */}
+          {isRouteDropdownOpen && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white/98 dark:bg-gray-900/98 backdrop-blur-2xl rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* Search Inside Dropdown */}
+              <div className="p-3 border-b border-gray-100 dark:border-gray-800">
+                <input
+                  type="text"
+                  placeholder="Search route number or city..."
+                  className="w-full bg-gray-50 dark:bg-gray-800 border-none rounded-xl px-4 py-2 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 dark:text-gray-100"
+                  value={routeSearchQuery}
+                  onChange={(e) => setRouteSearchQuery(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                />
+              </div>
+
+              <div className="max-h-64 overflow-y-auto">
+                <div
+                  onClick={() => { setSelectedRoute('All'); setIsRouteDropdownOpen(false); setRouteSearchQuery(''); }}
+                  className={`px-4 py-3 text-xs font-bold cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${selectedRoute === 'All' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'text-gray-500 dark:text-gray-400'}`}
+                >
+                  All Live Routes
+                </div>
+                {filteredRoutesDropdown.map(route => (
+                  <div
+                    key={route.id}
+                    onClick={() => { setSelectedRoute(route.routeNumber); setIsRouteDropdownOpen(false); setRouteSearchQuery(''); }}
+                    className={`px-4 py-3 text-xs font-bold cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-t border-gray-50 dark:border-gray-800 ${selectedRoute === route.routeNumber ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'text-gray-700 dark:text-gray-300'}`}
+                  >
+                    <span className="text-blue-500 mr-2">{route.routeNumber}</span>
+                    <span>{route.startLocation} / {route.endLocation}</span>
+                  </div>
+                ))}
+                {filteredRoutesDropdown.length === 0 && (
+                  <div className="px-4 py-8 text-center text-gray-400 text-[11px] font-bold uppercase tracking-widest">No routes found</div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Filter Toggle */}
@@ -377,9 +713,9 @@ const LiveTracking = () => {
             <span className="text-[12px] text-gray-500 font-medium">No buses detected nearby</span>
           ) : (
             <div className="flex items-center gap-6">
-              {filteredBuses.slice(0, 3).map(bus => (
+              {filteredBuses.slice(0, 3).map((bus, index) => (
                 <div
-                  key={bus.driverId}
+                  key={bus.busId || `bus-${index}`}
                   className="flex items-center gap-3 cursor-pointer hover:bg-white/5 px-2 py-1 rounded-xl transition-all"
                   onClick={() => { setSelectedBus(bus); setSelectedStop(null); }}
                 >
@@ -387,8 +723,10 @@ const LiveTracking = () => {
                     <Bus className="w-3.5 h-3.5 text-white" />
                   </div>
                   <div>
-                    <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">Route {bus.routeId || '138'}</p>
-                    <p className="text-xs font-bold text-white">{bus.busId || 'NA-5567'}</p>
+                    <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">
+                      Route {bus.routeNumber}
+                    </p>
+                    <p className="text-xs font-bold text-white">{bus.busId}</p>
                   </div>
                 </div>
               ))}
@@ -427,11 +765,10 @@ const LiveTracking = () => {
               <div className="space-y-2">
                 <button
                   onClick={() => setSelectedRoute('All')}
-                  className={`w-full text-left px-4 py-3.5 rounded-xl transition-all border font-semibold text-sm ${
-                    selectedRoute === 'All'
-                      ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
-                      : 'bg-gray-50 dark:bg-gray-900 border-transparent text-gray-700 dark:text-gray-300 hover:border-gray-200 dark:hover:border-gray-700'
-                  }`}
+                  className={`w-full text-left px-4 py-3.5 rounded-xl transition-all border font-semibold text-sm ${selectedRoute === 'All'
+                    ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
+                    : 'bg-gray-50 dark:bg-gray-900 border-transparent text-gray-700 dark:text-gray-300 hover:border-gray-200 dark:hover:border-gray-700'
+                    }`}
                 >
                   <span>🗺 All Routes</span>
                 </button>
@@ -439,11 +776,10 @@ const LiveTracking = () => {
                   <button
                     key={route.id}
                     onClick={() => setSelectedRoute(route.routeNumber)}
-                    className={`w-full text-left px-4 py-3.5 rounded-xl transition-all border font-semibold text-sm ${
-                      selectedRoute === route.routeNumber
-                        ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
-                        : 'bg-gray-50 dark:bg-gray-900 border-transparent text-gray-700 dark:text-gray-300 hover:border-gray-200 dark:hover:border-gray-700'
-                    }`}
+                    className={`w-full text-left px-4 py-3.5 rounded-xl transition-all border font-semibold text-sm ${selectedRoute === route.routeNumber
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
+                      : 'bg-gray-50 dark:bg-gray-900 border-transparent text-gray-700 dark:text-gray-300 hover:border-gray-200 dark:hover:border-gray-700'
+                      }`}
                   >
                     <span>🚌 Route {route.routeNumber}</span>
                   </button>
@@ -455,12 +791,52 @@ const LiveTracking = () => {
             <div>
               <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Bus Status</p>
               <div className="grid grid-cols-2 gap-2">
-                {['Active', 'Idle'].map(status => (
-                  <button key={status} className="bg-gray-50 dark:bg-gray-900 p-3.5 rounded-xl text-sm font-bold text-gray-600 dark:text-gray-400 border border-transparent hover:border-blue-500/30 transition-all">
-                    {status === 'Active' ? '🟢' : '🟡'} {status}
+                {['All', 'Active', 'Idle'].map(status => (
+                  <button
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    className={`p-3.5 rounded-xl text-sm font-bold border transition-all ${statusFilter === status
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
+                      : 'bg-gray-50 dark:bg-gray-900 border-transparent text-gray-600 dark:text-gray-400 hover:border-blue-500/30'
+                      }`}
+                  >
+                    {status === 'Active' ? '🟢' : status === 'Idle' ? '🟡' : '📦'} {status}
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Distance Filter */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Distance Filter</p>
+              <button
+                onClick={() => setUseRadiusFilter(!useRadiusFilter)}
+                className={`w-full text-left px-4 py-3.5 rounded-xl transition-all border font-semibold text-sm flex items-center justify-between ${useRadiusFilter
+                  ? 'bg-green-600 border-green-500 text-white shadow-lg shadow-green-500/20'
+                  : 'bg-gray-50 dark:bg-gray-900 border-transparent text-gray-700 dark:text-gray-300'
+                  }`}
+              >
+                <span>Nearby (Sub 10km)</span>
+                <Zap className={`w-4 h-4 ${useRadiusFilter ? 'text-white' : 'text-gray-400'}`} />
+              </button>
+              {useRadiusFilter && !userLocation && (
+                <p className="text-[10px] text-red-500 mt-2">Waiting for your GPS location...</p>
+              )}
+            </div>
+
+            {/* Bus Stops Toggle */}
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Map Elements</p>
+              <button
+                onClick={() => setShowStops(!showStops)}
+                className={`w-full text-left px-4 py-3.5 rounded-xl transition-all border font-semibold text-sm flex items-center justify-between ${showStops
+                  ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
+                  : 'bg-gray-50 dark:bg-gray-900 border-transparent text-gray-700 dark:text-gray-300'
+                  }`}
+              >
+                <span>{showStops ? 'Hide' : 'Show'} All Bus Stops</span>
+                <Layers className={`w-4 h-4 ${showStops ? 'text-white' : 'text-gray-400'}`} />
+              </button>
             </div>
 
             {/* Live Sync Info */}
@@ -480,11 +856,23 @@ const LiveTracking = () => {
               </button>
             </div>
 
-            {/* Nearby Stops */}
+            {/* Route Stops Filtered with Search */}
             <div>
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Database Stops</p>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+                {selectedRoute === 'All' ? 'All Database Stops' : `Stops on Route ${selectedRoute}`}
+              </p>
+
+              {/* Stop Search */}
+              <input
+                type="text"
+                placeholder="Find a stop..."
+                className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-xl px-4 py-3 text-xs font-bold mb-4 outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100 placeholder-gray-500"
+                value={stopSearchQuery}
+                onChange={(e) => setStopSearchQuery(e.target.value)}
+              />
+
               <div className="space-y-2">
-                {busStops.map(stop => (
+                {filteredSidebarStops.map(stop => (
                   <div
                     key={stop.id}
                     onClick={() => { navigate(`/stop/${stop.id}`); setShowFilters(false); }}
@@ -497,6 +885,9 @@ const LiveTracking = () => {
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 transition-colors" />
                   </div>
                 ))}
+                {filteredSidebarStops.length === 0 && (
+                  <div className="py-8 text-center text-gray-400 text-[11px] font-bold uppercase tracking-widest">No stops for this route</div>
+                )}
               </div>
             </div>
           </div>

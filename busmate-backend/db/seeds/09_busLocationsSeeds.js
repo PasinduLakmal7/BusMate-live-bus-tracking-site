@@ -3,31 +3,44 @@
  */
 exports.seed = async function (knex) {
 
+  // Clear old locations
   await knex.raw('TRUNCATE TABLE bus_locations RESTART IDENTITY CASCADE');
+
+  // 1. Fetch buses and their assigned routes from schedules
+  const busesWithRoutes = await knex('buses')
+    .join('bus_schedules', 'buses.bus_id', 'bus_schedules.bus_id')
+    .distinctOn('buses.bus_id')
+    .select('buses.bus_id', 'bus_schedules.route_id');
+
+  if (busesWithRoutes.length === 0) {
+    console.warn('⚠️ No bus schedules found. Please seed schedules first!');
+    return;
+  }
 
   const locations = [];
 
-  // Hub coordinates
-  const hubs = [
-    { name: 'Fort', lat: 6.9344, lng: 79.8524 },
-    { name: 'Maharagama', lat: 6.8511, lng: 79.9212 },
-    { name: 'Horana', lat: 6.7111, lng: 80.0611 },
-    { name: 'Kiribathgoda', lat: 6.9911, lng: 79.9311 },
-    { name: 'Kaduwela', lat: 6.9411, lng: 79.9811 }
-  ];
+  for (const bus of busesWithRoutes) {
+    // 2. Fetch the very first stop for this route to use as terminal starting location
+    const firstStop = await knex('route_stops')
+      .where('route_id', bus.route_id)
+      .orderBy('stop_order', 'asc')
+      .first();
 
-  for (let i = 1; i <= 25; i++) {
-    const hub = hubs[(i - 1) % hubs.length];
-    
-    locations.push({
-      bus_id: i,
-      latitude: (hub.lat + (Math.random() - 0.5) * 0.01).toFixed(8),
-      longitude: (hub.lng + (Math.random() - 0.5) * 0.01).toFixed(8),
-      speed: Math.floor(Math.random() * 45), // Speed between 0-45 km/h
-      recorded_at: new Date()
-    });
+    if (firstStop) {
+      locations.push({
+        bus_id: bus.bus_id,
+        latitude: firstStop.latitude,
+        longitude: firstStop.longitude,
+        speed: 0, // Initially stopped at terminal
+        recorded_at: new Date(),
+        heading: 0
+      });
+    }
   }
 
-  await knex('bus_locations').insert(locations);
+  if (locations.length > 0) {
+    await knex('bus_locations').insert(locations);
+    console.log(`✅ Successfully seeded ${locations.length} bus starting locations at their terminals.`);
+  }
 };
 
