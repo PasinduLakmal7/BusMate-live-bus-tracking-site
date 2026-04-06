@@ -160,3 +160,21 @@ img {
 .gm-err-title {
   display: none !important;
 }
+
+@keyframes scroll-text {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-scroll-text {
+  animation: scroll-text 30s linear infinite;
+}
+
+@keyframes slow-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-slow-spin {
+  animation: slow-spin 120s linear infinite;
+}
