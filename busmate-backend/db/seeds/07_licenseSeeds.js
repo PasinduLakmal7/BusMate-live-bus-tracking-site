@@ -7,7 +7,7 @@ exports.seed = async function (knex) {
 
   const licenses = [];
 
-  for (let i = 1; i <= 25; i++) {
+  for (let i = 1; i <= 51; i++) {
     licenses.push({
       driver_id: i, // linked to drivers 1-25
       license_number: `B${1000000 + i}`,

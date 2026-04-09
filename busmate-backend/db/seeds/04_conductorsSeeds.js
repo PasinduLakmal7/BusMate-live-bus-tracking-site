@@ -10,7 +10,12 @@ exports.seed = async function (knex) {
     'Lasith Malinga', 'Kusal Perera', 'Dhananjaya de Silva', 'Nuwan Kulasekara', 'Ajantha Mendis',
     'Rangana Herath', 'Chaminda Vaas', 'Muttiah Muralitharan', 'Sanath Jayasuriya', 'Arjuna Ranatunga',
     'Roshan Mahanama', 'Hashan Tillakaratne', 'Marvan Atapattu', 'Asanka Gurusinha', 'Rumesh Ratnayake',
-    'Dhammika Prasad', 'Suranga Lakmal', 'Lahiru Kumara', 'Dushmantha Chameera', 'Wanindu Hasaranga'
+    'Dhammika Prasad', 'Suranga Lakmal', 'Lahiru Kumara', 'Dushmantha Chameera', 'Wanindu Hasaranga',
+    'Seekkuge Prasanna', 'Ishan Jayaratne', 'Kasun Fernando', 'Bhanuka Rajapaksha', 'Charith Asalanka',
+    'Pathum Nissanka', 'Janith Liyanage', 'Niroshan Dickwella', 'Minod Bhanuka', 'Asitha Fernando',
+    'Dilshan Madushanka', 'Pramod Madushan', 'Binura Fernando', 'Lakshan Sandakan', 'Vishwa Fernando',
+    'Ramesh Mendis', 'Jeffrey Vandersay', 'Dasun Shanaka', 'Chamika Karunaratne', 'Akila Dananjaya',
+    'Oshada Fernando', 'Sadeera Samarawickrama', 'Ashan Priyanjan', 'Lahiru Thirimanne', 'Roshen Silva'
   ];
 
   const conductors = names.map((name, i) => ({

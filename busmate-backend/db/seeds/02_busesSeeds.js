@@ -10,7 +10,12 @@ exports.seed = async function (knex) {
     'CP NC-3344', 'CP NA-9900', 'CP NB-5566', 'SP NB-7788', 'SP NL-1122',
     'SP NA-4455', 'NW NB-3344', 'NW NE-8899', 'NC NA-2233', 'NC NB-6677',
     'WP NB-1111', 'WP NB-2222', 'WP NB-3333', 'WP NB-4444', 'WP NB-5555',
-    'WP NB-6666', 'WP NB-7777', 'WP NB-8888', 'WP NB-9999', 'WP NB-1010'
+    'WP NB-6666', 'WP NB-7777', 'WP NB-8888', 'WP NB-9999', 'WP NB-1010',
+    'WP NC-1111', 'WP NC-2222', 'WP NC-3333', 'WP NC-4444', 'WP NC-5555',
+    'CP NC-1111', 'CP NC-2222', 'CP NC-3333', 'CP NC-4444', 'CP NC-5555',
+    'SP NC-1111', 'SP NC-2222', 'SP NC-3333', 'SP NC-4444', 'SP NC-5555',
+    'UP NB-1111', 'UP NB-2222', 'UP NB-3333', 'UP NB-4444', 'UP NB-5555',
+    'WP ND-1111', 'WP ND-2222', 'WP ND-3333', 'WP ND-4444', 'WP ND-5555'
   ];
 
   const buses = plates.map((plate, i) => ({

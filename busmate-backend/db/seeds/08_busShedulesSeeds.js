@@ -7,12 +7,12 @@ exports.seed = async function (knex) {
 
   const schedules = [];
 
-  // Generate schedules for all 12 routes
-  // 12 routes, 1 bus per route = 12 buses total used
-  for (let routeId = 1; routeId <= 12; routeId++) {
+  // Generate schedules for all 50 routes
+  for (let routeId = 1; routeId <= 50; routeId++) {
     const busId = routeId; // Bus 1 -> Route 1, Bus 2 -> Route 2, etc.
-    const driverId = busId;
-    const conductorId = busId;
+    // If it's Route 100 (ID 14), assign our Demo Driver (ID 51)
+    const driverId = (routeId === 14) ? 51 : (routeId <= 50 ? routeId : 1);
+    const conductorId = (routeId <= 50 ? routeId : 1);
 
     // Each bus does 2 round trips (4 total trips) 
     const startHours = [6, 14];
