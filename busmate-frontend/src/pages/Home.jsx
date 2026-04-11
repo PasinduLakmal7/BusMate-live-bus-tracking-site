@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import heroBg from '../assets/hero-bg.jpg';
+import heroBg from '../assets/hero-bg-wide.png';
 import { Search, Map, MapPin, Compass, AlertTriangle, Clock, Zap, Star } from 'lucide-react';
 import { GoogleMap, Marker, useLoadScript, Autocomplete } from "@react-google-maps/api";
 import Button from '../components/common/Button';
@@ -104,15 +104,19 @@ const Home = () => {
 
   const [upcomingRoutes, setUpcomingRoutes] = useState([]);
   const [stats, setStats] = useState({ routes: 0, buses: 0, drivers: 0 });
+  const [alerts, setAlerts] = useState([]);
+  const [predictions, setPredictions] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [routesRes, statsRes] = await Promise.all([
-          fetch('http://localhost:4000/site/routes'),
-          fetch('http://localhost:4000/site/stats')
+        const [routesRes, statsRes, alertsRes, predRes] = await Promise.all([
+          fetch('/api/site/routes', { credentials: 'include' }),
+          fetch('/api/site/stats', { credentials: 'include' }),
+          fetch('/api/site/alerts/latest', { credentials: 'include' }),
+          fetch('/api/site/predictions', { credentials: 'include' })
         ]);
-        
+
         const routesData = await routesRes.json();
         if (routesData.success) {
           setUpcomingRoutes(routesData.routes.slice(0, 2));
@@ -122,6 +126,13 @@ const Home = () => {
         if (statsData.success) {
           setStats(statsData.stats);
         }
+
+        const alertsData = await alertsRes.json();
+        if (alertsData.success) setAlerts(alertsData.alerts.slice(0, 2));
+
+        const predData = await predRes.json();
+        if (predData.success) setPredictions(predData.predictions);
+
       } catch (err) {
         console.error('Error fetching home data:', err);
       }
@@ -144,31 +155,62 @@ const Home = () => {
         <div className="absolute inset-0 bg-blue-800/10 mix-blend-overlay"></div>
 
         <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto relative z-10 flex flex-col items-center text-center w-full drop-shadow-lg">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4 text-white drop-shadow-2xl">
-            Where are you going?
+          {/* Active Alerts Ticker */}
+          {alerts.length > 0 && (
+            <div className="mb-8 w-full max-w-2xl bg-rose-600/10 backdrop-blur-md border border-rose-500/20 rounded-full px-6 py-2 flex items-center gap-4 overflow-hidden group/ticker">
+              <div className="flex items-center gap-2 text-rose-500 shrink-0">
+                <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Live Disruptions:</span>
+              </div>
+              <div className="flex-grow overflow-hidden relative h-4">
+                <div className="absolute inset-0 flex items-center animate-scroll-text whitespace-nowrap gap-12 font-bold text-[11px] text-rose-100 uppercase tracking-widest">
+                  {alerts.map((a, i) => (
+                    <span key={i} className="flex items-center gap-2">
+                      <AlertTriangle className="w-3 h-3" /> {a.title}: {a.message}
+                    </span>
+                  ))}
+                  {/* Duplicate for seamless scroll */}
+                  {alerts.map((a, i) => (
+                    <span key={`dup-${i}`} className="flex items-center gap-2">
+                      <AlertTriangle className="w-3 h-3" /> {a.title}: {a.message}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <h1 className="flex flex-col mb-4 uppercase drop-shadow-2xl text-center items-center">
+            <span className="text-4xl md:text-6xl lg:text-7xl font-black tracking-tighter text-white/90 leading-none">
+              WHERE ARE YOU
+            </span>
+            <span className="text-5xl md:text-7xl lg:text-[5rem] font-black tracking-tighter text-blue-500 leading-none">
+              GOING?
+            </span>
           </h1>
-          <p className="text-blue-50 text-lg md:text-xl mb-8 max-w-2xl font-medium drop-shadow-md">
-            Live tracking, smart predictions, and seamless travel across the city.
+          <p className="text-blue-50/60 text-[10px] md:text-xs mb-8 max-w-sm md:max-w-xl font-bold tracking-[0.4em] uppercase text-center leading-relaxed mx-auto">
+            Live tracking, smart predictions, and seamless transit across the global node network.
           </p>
 
-          <div className="w-full max-w-3xl bg-white dark:bg-gray-800 p-2 rounded-2xl shadow-xl flex flex-col sm:flex-row gap-2">
+          <div className="w-full max-w-xl mx-auto bg-black/60 backdrop-blur-2xl border border-white/5 p-1 rounded-[2rem] shadow-2xl flex flex-col sm:flex-row gap-2 relative group transition-all duration-500">
+            <div className="absolute -inset-1 bg-blue-500/10 rounded-[2rem] blur-2xl opacity-0 group-hover:opacity-100 transition duration-700"></div>
             {isLoaded ? (
-              <Autocomplete onLoad={onLoad} onPlaceChanged={onPlaceChanged} className="flex-grow">
+              <Autocomplete onLoad={onLoad} onPlaceChanged={onPlaceChanged} className="flex-grow relative z-10 w-full">
                 <InputField
                   icon={Search}
-                  placeholder="Where are you going?"
-                  className="w-full text-gray-900 dark:text-gray-50 border-none shadow-none bg-gray-50/50"
+                  placeholder="Enter destination node..."
+                  className="w-full text-white bg-transparent border-none shadow-none font-bold placeholder:text-gray-600 placeholder:uppercase placeholder:tracking-widest py-3 px-6"
                 />
               </Autocomplete>
             ) : (
               <InputField
                 icon={Search}
-                placeholder="Enter destination, stop, or route..."
-                className="flex-grow text-gray-900 dark:text-gray-50 border-none shadow-none bg-gray-50/50"
+                placeholder="Initializing node matrix..."
+                className="flex-grow text-white bg-transparent border-none shadow-none font-bold placeholder:text-gray-600 placeholder:uppercase placeholder:tracking-widest relative z-10 py-3 px-6"
               />
             )}
-            <Button className="w-full sm:w-auto px-8 py-3 text-base shadow-none">
-              Search
+            <Button className="w-full sm:w-auto px-10 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] tracking-[0.3em] rounded-2xl shadow-2xl shadow-blue-500/40 relative z-10 active:scale-95 transition-all">
+              Launch Node
             </Button>
           </div>
         </div>
@@ -177,37 +219,41 @@ const Home = () => {
       <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-20">
 
         {/* Quick Actions Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-          <Link to="/live" className="group">
-            <Card hover className="p-4 flex flex-col items-center justify-center text-center h-full bg-white/90 backdrop-blur-sm shadow-md">
-              <div className="bg-blue-100 p-3 rounded-full text-blue-600 mb-3 group-hover:scale-110 transition-transform">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+          <Link to="/live" className="group block">
+            <Card className="p-6 border-none bg-white dark:bg-gray-900 shadow-xl flex flex-col items-center text-center h-full relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-500/10">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-blue-500/10 transition-colors"></div>
+              <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform shadow-inner border border-blue-100 dark:border-blue-800/50">
                 <Map className="w-6 h-6" />
               </div>
-              <h3 className="font-semibold text-gray-900 dark:text-gray-50 text-sm md:text-base">Live Tracking</h3>
+              <h3 className="font-black text-gray-900 dark:text-white uppercase tracking-widest text-[11px]">Live Tracking</h3>
             </Card>
           </Link>
-          <Link to="/planner" className="group">
-            <Card hover className="p-4 flex flex-col items-center justify-center text-center h-full bg-white/90 backdrop-blur-sm shadow-md">
-              <div className="bg-purple-100 p-3 rounded-full text-purple-600 mb-3 group-hover:scale-110 transition-transform">
+          <Link to="/planner" className="group block">
+            <Card className="p-6 border-none bg-white dark:bg-gray-900 shadow-xl flex flex-col items-center text-center h-full relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/10">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-indigo-500/10 transition-colors"></div>
+              <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center text-indigo-600 mb-4 group-hover:scale-110 transition-transform shadow-inner border border-indigo-100 dark:border-indigo-800/50">
                 <Compass className="w-6 h-6" />
               </div>
-              <h3 className="font-semibold text-gray-900 dark:text-gray-50 text-sm md:text-base">Route Planner</h3>
+              <h3 className="font-black text-gray-900 dark:text-white uppercase tracking-widest text-[11px]">Route Planner</h3>
             </Card>
           </Link>
-          <Link to="/live" className="group">
-            <Card hover className="p-4 flex flex-col items-center justify-center text-center h-full bg-white/90 backdrop-blur-sm shadow-md">
-              <div className="bg-emerald-100 p-3 rounded-full text-emerald-600 mb-3 group-hover:scale-110 transition-transform">
-                <MapPin className="w-6 h-6" />
+          <Link to="/routes" className="group block">
+            <Card className="p-6 border-none bg-white dark:bg-gray-900 shadow-xl flex flex-col items-center text-center h-full relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-500/10">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-emerald-500/10 transition-colors"></div>
+              <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-center text-emerald-600 mb-4 group-hover:scale-110 transition-transform shadow-inner border border-emerald-100 dark:border-emerald-800/50">
+                <Clock className="w-6 h-6" />
               </div>
-              <h3 className="font-semibold text-gray-900 dark:text-gray-50 text-sm md:text-base">Nearby Buses</h3>
+              <h3 className="font-black text-gray-900 dark:text-white uppercase tracking-widest text-[11px]">Bus Schedules</h3>
             </Card>
           </Link>
-          <Link to="/favorites" className="group">
-            <Card hover className="p-4 flex flex-col items-center justify-center text-center h-full bg-white/90 backdrop-blur-sm shadow-md">
-              <div className="bg-orange-100 p-3 rounded-full text-orange-600 mb-3 group-hover:scale-110 transition-transform">
+          <Link to="/favorites" className="group block">
+            <Card className="p-6 border-none bg-white dark:bg-gray-900 shadow-xl flex flex-col items-center text-center h-full relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-rose-500/10">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-rose-500/10 transition-colors"></div>
+              <div className="w-14 h-14 bg-rose-50 dark:bg-rose-900/20 rounded-2xl flex items-center justify-center text-rose-600 mb-4 group-hover:scale-110 transition-transform shadow-inner border border-rose-100 dark:border-rose-800/50">
                 <Star className="w-6 h-6" />
               </div>
-              <h3 className="font-semibold text-gray-900 dark:text-gray-50 text-sm md:text-base">Saved Routes</h3>
+              <h3 className="font-black text-gray-900 dark:text-white uppercase tracking-widest text-[11px]">Saved Routes</h3>
             </Card>
           </Link>
         </div>
@@ -219,28 +265,28 @@ const Home = () => {
 
             {/* Live Map Preview Placeholder */}
             <section>
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50 flex items-center gap-2">
-                    <MapPin className="w-5 h-5 text-blue-600" /> Buses Near You
-                  </h2>
-                  <div className="flex items-center gap-3">
-                    {isLocationEnabled && (
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800">
-                          <div className={`w-1.5 h-1.5 rounded-full ${locationStatus === 'high' ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></div>
-                          <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300">
-                            {locationStatus === 'high' ? 'LIVE GPS' : 'APPROX'}
-                          </span>
-                        </div>
-                        {(locationStatus === 'low' || locationStatus === 'error') && (
-                          <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium">Approximate on laptops</span>
-                        )}
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-black text-gray-900 dark:text-gray-50 flex items-center gap-3 uppercase tracking-tight">
+                  <MapPin className="w-6 h-6 text-blue-600" /> Active Radar
+                </h2>
+                <div className="flex items-center gap-3">
+                  {isLocationEnabled && (
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50">
+                        <div className={`w-2 h-2 rounded-full ${locationStatus === 'high' ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-amber-500'}`}></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400">
+                          {locationStatus === 'high' ? 'LIVE SYNC' : 'APPROX'}
+                        </span>
                       </div>
-                    )}
-                    <Link to="/live" className="text-sm text-blue-600 font-medium hover:underline">View Full Map</Link>
-                  </div>
+                      {(locationStatus === 'low' || locationStatus === 'error') && (
+                        <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold uppercase tracking-widest">Network Variance</span>
+                      )}
+                    </div>
+                  )}
+                  <Link to="/live" className="text-[10px] px-4 py-2 font-black uppercase tracking-widest bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">Expand Node</Link>
                 </div>
-              <Card className="h-64 sm:h-80 w-full relative bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+              </div>
+              <Card className="h-72 sm:h-96 w-full relative bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl flex items-center justify-center overflow-hidden rounded-[2rem]">
                 {isLocationEnabled && isLoaded && userLocation ? (
                   <GoogleMap
                     mapContainerStyle={mapContainerStyle}
@@ -276,8 +322,8 @@ const Home = () => {
                       ] : []
                     }}
                   >
-                    <Marker 
-                      position={userLocation} 
+                    <Marker
+                      position={userLocation}
                       icon={{
                         url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png"
                       }}
@@ -304,29 +350,35 @@ const Home = () => {
 
             {/* Smart Suggestions */}
             <section>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50 flex items-center gap-2 mb-4">
-                <Zap className="w-5 h-5 text-amber-500" /> AI Insights
+              <h2 className="text-xs font-black text-gray-900 dark:text-gray-50 flex items-center gap-3 mb-6 uppercase tracking-[0.2em]">
+                <Zap className="w-5 h-5 text-amber-500" /> AI Dynamics
               </h2>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <Card hover className="p-4 border-l-4 border-l-amber-500">
-                  <div className="flex items-start gap-4">
-                    <div className="bg-amber-100 p-2 rounded-lg text-amber-600">
-                      <Clock className="w-5 h-5" />
+              <div className="grid sm:grid-cols-2 gap-6">
+                <Card hover className="p-6 border-none bg-white dark:bg-gray-900 shadow-xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-amber-500/10 transition-colors"></div>
+                  <div className="flex items-start gap-5 relative z-10">
+                    <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-2xl text-amber-600 border border-amber-100 dark:border-amber-800/50">
+                      <Clock className="w-6 h-6" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-gray-900 dark:text-gray-50 text-sm">Best Time to Travel</h4>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Route 138 is usually least crowded between 10:00 AM and 11:30 AM.</p>
+                      <h4 className="font-black text-gray-900 dark:text-gray-50 text-[11px] uppercase tracking-widest">Optimal Node Sync</h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-bold leading-relaxed">
+                        Best travel window detected: <span className="text-gray-900 dark:text-white uppercase tracking-wider mx-1">{predictions?.bestTime?.label || '10:00 AM'}</span> (System Minimum Node Load).
+                      </p>
                     </div>
                   </div>
                 </Card>
-                <Card hover className="p-4 border-l-4 border-l-emerald-500">
-                  <div className="flex items-start gap-4">
-                    <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600">
-                      <Zap className="w-5 h-5" />
+                <Card hover className="p-6 border-none bg-white dark:bg-gray-900 shadow-xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-blue-500/10 transition-colors"></div>
+                  <div className="flex items-start gap-5 relative z-10">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-2xl text-blue-600 border border-blue-100 dark:border-blue-800/50">
+                      <Zap className="w-6 h-6" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-gray-900 dark:text-gray-50 text-sm">Fastest Route Found</h4>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Taking the Expressway route today will save you 25 minutes to Fort.</p>
+                      <h4 className="font-black text-gray-900 dark:text-gray-50 text-[11px] uppercase tracking-widest">Efficiency Core</h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-bold leading-relaxed">
+                        Regional node efficiency: <span className="text-emerald-500 uppercase tracking-wider mx-1 font-black">{predictions?.efficiency || 88}%</span>. Normal flow detected.
+                      </p>
                     </div>
                   </div>
                 </Card>
@@ -338,49 +390,63 @@ const Home = () => {
           <div className="space-y-8">
 
             {/* Active Alerts Preview */}
-            <Card className="p-5">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-gray-900 dark:text-gray-50 flex items-center gap-2">
+            <Card className="p-5 border-none bg-white dark:bg-gray-900/50 backdrop-blur-sm shadow-xl">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-black text-gray-900 dark:text-gray-50 flex items-center gap-3 uppercase tracking-tight text-xs">
                   <AlertTriangle className="w-5 h-5 text-red-500" /> Active Alerts
                 </h3>
-                <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded-full">2 New</span>
+                {alerts.length > 0 && (
+                  <span className="bg-red-500/10 text-red-500 text-[10px] font-black px-3 py-1 rounded-full border border-red-500/20 uppercase tracking-widest">
+                    {alerts.length} New
+                  </span>
+                )}
               </div>
-              <ul className="space-y-4">
-                <li className="border-b border-gray-50 dark:border-gray-800 pb-3 last:border-0 last:pb-0">
-                  <span className="text-xs font-semibold text-red-600 mb-1 block">Delay • Route 120</span>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">Heavy traffic near Townhall junction. Expect 15 min delays.</p>
-                  <span className="text-xs text-gray-400 mt-1 block">Updated 10 mins ago</span>
-                </li>
-                <li className="pt-1">
-                  <span className="text-xs font-semibold text-amber-600 mb-1 block">Reroute • Route 138</span>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">Road closure on Main Street. Buses rerouting via Park Road.</p>
-                  <span className="text-xs text-gray-400 mt-1 block">Updated 1 hour ago</span>
-                </li>
+              <ul className="space-y-6">
+                {alerts.length > 0 ? alerts.map((alert) => (
+                  <li key={alert.id} className="group cursor-pointer">
+                    <span className="text-[10px] font-black text-red-500 mb-1.5 block uppercase tracking-[0.2em]">{alert.type} • {alert.title}</span>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 font-bold leading-relaxed">{alert.message}</p>
+                    <span className="text-[9px] text-gray-400 font-extrabold uppercase mt-2 block tracking-widest">Received {new Date(alert.reported_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </li>
+                )) : (
+                  <li className="text-center py-4">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">No active node disruptions</p>
+                  </li>
+                )}
               </ul>
-              <Link to="/alerts" className="block text-center text-sm font-medium text-blue-600 hover:text-blue-700 w-full mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                View all alerts
+              <Link to="/alerts" className="block text-center text-[10px] font-black uppercase tracking-[0.25em] text-blue-500 hover:text-blue-400 w-full mt-6 pt-6 border-t border-gray-100 dark:border-gray-800/50 transition-colors">
+                Expand Alert Matrix
               </Link>
             </Card>
 
             {/* Daily Schedule Quick Look */}
-            <Card className="p-5 bg-gradient-to-br from-gray-900 to-gray-800 text-white">
-              <h3 className="font-bold mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-blue-400" /> Upcoming Dispatches
+            <Card className="p-6 bg-gray-900 text-white border-none shadow-[0_20px_40px_rgba(0,0,0,0.4)] relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/10 rounded-full blur-[40px] -translate-y-1/2 translate-x-1/2"></div>
+              <h3 className="font-black text-xs uppercase tracking-[0.2em] mb-6 flex items-center gap-3 text-gray-400">
+                <Clock className="w-5 h-5 text-blue-500" /> Dispatch Registry
               </h3>
-              <ul className="space-y-3">
+              <ul className="space-y-4 relative z-10">
                 {upcomingRoutes.length > 0 ? upcomingRoutes.map((route) => (
-                  <li key={route.id} className="flex justify-between items-center border-b border-gray-700 pb-2 last:border-0 last:pb-0">
-                    <div>
-                      <span className="font-bold text-lg block">{route.routeNumber}</span>
-                      <span className="text-xs text-gray-400">{route.startLocation} - {route.endLocation}</span>
+                  <li key={route.id} className="flex justify-between items-center group cursor-pointer hover:bg-white/5 p-3 rounded-2xl transition-colors -mx-3">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-800 rounded-xl border border-gray-700 flex items-center justify-center">
+                        <span className="font-black text-lg text-white group-hover:text-blue-500 transition-colors tracking-tight">{route.routeNumber}</span>
+                      </div>
+                      <div>
+                        <span className="text-xs font-black uppercase tracking-widest text-gray-300 block">{route.startLocation}</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">To {route.endLocation}</span>
+                      </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-sm font-bold text-emerald-400 block">{Math.floor(Math.random() * 15) + 2} min</span>
-                      <span className="text-xs text-gray-400">On time</span>
+                      <span className="text-sm font-black text-emerald-400 flex items-center justify-end gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+                        {Math.floor(Math.random() * 15) + 2}m
+                      </span>
+                      <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 block mt-1 leading-none">Live Sync</span>
                     </div>
                   </li>
                 )) : (
-                  <p className="text-xs text-gray-400">Loading schedules...</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 animate-pulse">Synchronizing dispatch nodes...</p>
                 )}
               </ul>
             </Card>

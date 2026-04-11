@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MapPin, Navigation, ArrowDownUp, Clock, Zap, DollarSign, ChevronDown, Map as MapIcon, ArrowRight, AlertTriangle, Bus } from 'lucide-react';
-import { GoogleMap, Marker, useLoadScript, Polyline, InfoWindow, OverlayView, Autocomplete, DirectionsRenderer, DirectionsService } from "@react-google-maps/api";
+import { MapPin, Navigation, ArrowDownUp, Clock, Zap, ArrowRight, AlertTriangle, Bus, X, RotateCcw } from 'lucide-react';
+import { GoogleMap, Marker, useLoadScript, Polyline, OverlayView, Autocomplete, DirectionsRenderer } from "@react-google-maps/api";
 import Button from '../components/common/Button';
 import InputField from '../components/common/InputField';
 import Card from '../components/common/Card';
@@ -14,8 +14,6 @@ const mapContainerStyle = {
 };
 
 const defaultCenter = { lat: 6.9271, lng: 79.8612 }; // Colombo
-
-// Mock data removed to show only live location correctly
 
 const RoutePlanner = () => {
   const API_URL = '/api';
@@ -40,6 +38,10 @@ const RoutePlanner = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [isFindingRoutes, setIsFindingRoutes] = useState(false);
 
+  const [autocomplete, setAutocomplete] = useState(null);
+  const [destAutocomplete, setDestAutocomplete] = useState(null);
+  const [currentAddress, setCurrentAddress] = useState("Detecting...");
+
   // Helper to extract all transit steps from Google Directions response
   const getAllTransitSteps = (response) => {
     if (!response || !response.routes || response.routes.length === 0) return [];
@@ -47,9 +49,34 @@ const RoutePlanner = () => {
     return leg.steps.filter(step => step.travel_mode === 'TRANSIT');
   };
 
+  // Compute total fare across all transit steps for the journey summary
+  const computeTotalFare = (steps) => {
+    return steps.reduce((total, step) => {
+      return total + 30 + ((step.distance?.value || 0) / 1000) * 13;
+    }, 0).toFixed(2);
+  };
+
+  // Reset everything back to clean slate
+  const handleReset = () => {
+    setShowResults(false);
+    setMapState('default');
+    setSuggestions([]);
+    setDirectionsResponse(null);
+    setDistance('');
+    setDuration('');
+    setDestination(null);
+    setDestAddress('');
+  };
+
   const calculateRoute = async () => {
     if (!userLocation || !destination) return;
     setIsFindingRoutes(true);
+
+    // BUG FIX: Clear stale results before new search begins
+    setSuggestions([]);
+    setDirectionsResponse(null);
+    setDistance('');
+    setDuration('');
 
     const directionsService = new window.google.maps.DirectionsService();
 
@@ -90,8 +117,17 @@ const RoutePlanner = () => {
       const results = await getRoute(window.google.maps.TravelMode.TRANSIT);
       if (results && results.routes && results.routes.length > 0) {
         setDirectionsResponse(results);
-        setDistance(results.routes[0].legs[0].distance.text);
-        setDuration(results.routes[0].legs[0].duration.text);
+        const leg = results.routes[0].legs[0];
+        setDistance(leg.distance.text);
+        setDuration(leg.duration.text);
+
+        // IMPROVEMENT: Auto-fit map to show the full route
+        if (map) {
+          const bounds = new window.google.maps.LatLngBounds();
+          bounds.extend(userLocation);
+          bounds.extend(destination);
+          map.fitBounds(bounds, { top: 60, bottom: 60, left: 40, right: 40 });
+        }
       }
     } catch (error) {
       console.warn("Public Transit route not found, falling back to Driving...", error);
@@ -101,12 +137,21 @@ const RoutePlanner = () => {
         const results = await getRoute(window.google.maps.TravelMode.DRIVING);
         if (results && results.routes && results.routes.length > 0) {
           setDirectionsResponse(results);
-          setDistance(results.routes[0].legs[0].distance.text);
-          setDuration(results.routes[0].legs[0].duration.text);
+          const leg = results.routes[0].legs[0];
+          setDistance(leg.distance.text);
+          setDuration(leg.duration.text);
+
+          // IMPROVEMENT: Auto-fit map to show the full route
+          if (map) {
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend(userLocation);
+            bounds.extend(destination);
+            map.fitBounds(bounds, { top: 60, bottom: 60, left: 40, right: 40 });
+          }
         }
       } catch (fallbackError) {
         console.error("All route modes failed:", fallbackError);
-        alert("Could not find any road route between these points (Status: " + fallbackError + ").");
+        // No alert - just show the empty state gracefully
         setDirectionsResponse(null);
         setDistance("");
         setDuration("");
@@ -115,7 +160,6 @@ const RoutePlanner = () => {
       setIsFindingRoutes(false);
     }
   };
-
 
   // Check for destination passed from Home page
   useEffect(() => {
@@ -126,14 +170,15 @@ const RoutePlanner = () => {
     }
   }, [location.state, isLoaded]);
 
-  // Auto-calculate route if destination is passed from home and userLocation is ready
+  // BUG FIX: Removed the `!directionsResponse` guard so re-searches always work
   useEffect(() => {
-    if (location.state?.destination && userLocation && isLoaded && !directionsResponse) {
+    if (location.state?.destination && userLocation && isLoaded) {
       calculateRoute();
       setMapState('results');
       setShowResults(true);
     }
-  }, [userLocation, isLoaded, location.state, directionsResponse]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation, isLoaded, location.state]);
 
 
   useEffect(() => {
@@ -205,8 +250,6 @@ const RoutePlanner = () => {
           }
         }
       }
-    } else {
-      console.log("Autocomplete is not loaded yet!");
     }
   };
 
@@ -252,14 +295,8 @@ const RoutePlanner = () => {
     const lat = e.latLng.lat();
     const lng = e.latLng.lng();
     setUserLocation({ lat, lng });
-    setLocationStatus('low'); // manual is "low" or "manual"
-    console.log("Manual starting point set:", { lat, lng });
+    setLocationStatus('low');
   }, []);
-
-  const [autocomplete, setAutocomplete] = useState(null);
-  const [destAutocomplete, setDestAutocomplete] = useState(null);
-  const [currentAddress, setCurrentAddress] = useState("Detecting...");
-
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -274,15 +311,23 @@ const RoutePlanner = () => {
 
   const handleDestinationChange = (e) => {
     setDestAddress(e.target.value);
-    // Remove individual manual handling since Autocomplete will handle the selection
   };
 
-  const polylinePath = useMemo(() => {
-    if (userLocation && destination) {
-      return [userLocation, destination];
-    }
-    return [];
-  }, [userLocation, destination]);
+  // BUG FIX: Handle Google Maps load error
+  if (loadError) {
+    return (
+      <div className="max-w-[90%] mx-auto px-4 py-8 mt-16 flex flex-col items-center justify-center min-h-[60vh]">
+        <AlertTriangle className="w-16 h-16 text-red-400 mb-4" />
+        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Map failed to load</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-md">
+          There was a problem loading Google Maps. Please check your internet connection or API key configuration.
+        </p>
+        <p className="text-xs text-red-400 mt-3 font-mono">{loadError.message}</p>
+      </div>
+    );
+  }
+
+  const transitSteps = directionsResponse ? getAllTransitSteps(directionsResponse) : [];
 
   return (
     <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16">
@@ -291,10 +336,23 @@ const RoutePlanner = () => {
         {/* Planner Sidebar */}
         <div className="lg:col-span-1 space-y-6">
           <Card className="p-5 relative border-t-4 border-t-blue-600">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50 mb-6">Plan Your Journey</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-50">Plan Your Journey</h2>
+              {/* IMPROVEMENT: Reset / Clear Route button */}
+              {showResults && (
+                <button
+                  onClick={handleReset}
+                  title="Clear route and start over"
+                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors font-semibold"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Clear
+                </button>
+              )}
+            </div>
 
             <form onSubmit={handleSearch} className="space-y-4">
-              <div className="relative">
+              <div className="relative flex flex-col gap-3">
                 {isLoaded ? (
                   <Autocomplete
                     onLoad={onLoadAutocomplete}
@@ -303,45 +361,86 @@ const RoutePlanner = () => {
                     <InputField
                       icon={MapPin}
                       placeholder="Search your location..."
-                      className="mb-3"
-                      value={currentAddress === "Detecting..." ? "" : currentAddress}
+                      value={currentAddress === "Detecting..." || currentAddress === "Detecting current location..." ? "" : currentAddress}
                       onChange={(e) => setCurrentAddress(e.target.value)}
+                      rightElement={
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="p-1.5 rounded-full text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-700"
+                            title="Centre map on your location"
+                            onClick={() => {
+                              if (navigator.geolocation) {
+                                setLocationStatus('loading');
+                                setCurrentAddress("Detecting...");
+
+                                navigator.geolocation.getCurrentPosition(
+                                  (pos) => {
+                                    const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                                    setUserLocation(newPos);
+
+                                    // Map Centering
+                                    if (map) {
+                                      map.panTo(newPos);
+                                      map.setZoom(16);
+                                    }
+
+                                    // Reverse Geocode to update address input
+                                    const geocoder = new window.google.maps.Geocoder();
+                                    geocoder.geocode({ location: newPos }, (results, status) => {
+                                      if (status === "OK" && results[0]) {
+                                        setCurrentAddress(results[0].formatted_address);
+                                        setLocationStatus('high');
+                                      } else {
+                                        setCurrentAddress(`Coordinate: ${newPos.lat.toFixed(4)}, ${newPos.lng.toFixed(4)}`);
+                                        setLocationStatus('low');
+                                      }
+                                    });
+                                  },
+                                  (err) => {
+                                    console.error("Manual geolocation failed:", err);
+                                    alert("Could not detect your exact location. Please ensure location permissions are enabled.");
+                                    setLocationStatus('error');
+                                    setCurrentAddress("");
+                                  },
+                                  { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                                );
+                              } else {
+                                alert("Geolocation is not supported by your browser.");
+                              }
+                            }}
+                          >
+                            <Navigation className={`w-4 h-4 ${locationStatus === 'loading' ? 'animate-spin' : ''}`} />
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              const tempAddress = currentAddress;
+                              const tempLocation = userLocation;
+                              setCurrentAddress(destAddress);
+                              setUserLocation(destination);
+                              setDestAddress(tempAddress);
+                              setDestination(tempLocation);
+                            }}
+                            variant="ghost"
+                            title="Swap Locations"
+                            className="p-1.5 rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-transform active:rotate-180"
+                          >
+                            <ArrowDownUp className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                          </Button>
+                        </div>
+                      }
                     />
                   </Autocomplete>
                 ) : (
                   <InputField
                     icon={MapPin}
                     placeholder="Loading search..."
-                    className="mb-3 opacity-50"
+                    className="opacity-50"
                     disabled
                   />
                 )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="absolute right-2 top-1.5 p-1.5 text-blue-600 hover:bg-blue-50 z-20"
-                  title="Use precise location"
-                  onClick={() => {
-                    if (userLocation && map) {
-                      map.panTo(userLocation);
-                      map.setZoom(16);
-                    } else if (!userLocation) {
-                      alert("Wait... We are still fetching your location. If it stays wrong, type your address below!");
-                    }
-                  }}
-                >
-                  <Navigation className="w-4 h-4" />
-                </Button>
-
-                <div className="absolute left-6 top-[2.75rem] bottom-[2.75rem] w-0.5 bg-gray-200 dark:bg-gray-700 z-0"></div>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-sm p-1.5 rounded-full hover:bg-gray-50 z-10"
-                >
-                  <ArrowDownUp className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                </Button>
 
                 {isLoaded ? (
                   <Autocomplete
@@ -351,7 +450,7 @@ const RoutePlanner = () => {
                     <InputField
                       icon={MapPin}
                       placeholder="Where do you want to go?"
-                      className="text-gray-900 dark:text-gray-50 mb-1"
+                      className="text-gray-900 dark:text-gray-50"
                       value={destAddress}
                       onChange={handleDestinationChange}
                     />
@@ -360,7 +459,7 @@ const RoutePlanner = () => {
                   <InputField
                     icon={MapPin}
                     placeholder="Loading search..."
-                    className="mb-1 opacity-50"
+                    className="opacity-50"
                     disabled
                   />
                 )}
@@ -379,8 +478,8 @@ const RoutePlanner = () => {
                 />
               </div>
 
-              <Button type="submit" className="w-full mt-4 py-3 text-base shadow-md">
-                Find Routes
+              <Button type="submit" disabled={isFindingRoutes} className="w-full mt-4 py-3 text-base shadow-md disabled:opacity-50">
+                {isFindingRoutes ? 'Searching...' : 'Find Routes'}
               </Button>
             </form>
           </Card>
@@ -391,7 +490,13 @@ const RoutePlanner = () => {
               <h3 className="font-bold text-gray-900 dark:text-gray-50 flex justify-between items-center">
                 Suggested Routes
                 <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                  {suggestions.length > 0 ? `Found ${suggestions.length} options` : 'Finding best match...'}
+                  {isFindingRoutes
+                    ? 'Searching...'
+                    : suggestions.length > 0
+                      ? `Found ${suggestions.length} option${suggestions.length > 1 ? 's' : ''}`
+                      : transitSteps.length > 0
+                        ? `${transitSteps.length} step journey`
+                        : 'No routes found'}
                 </span>
               </h3>
 
@@ -401,67 +506,108 @@ const RoutePlanner = () => {
                   <p className="text-sm text-gray-500">Searching all Sri Lankan bus routes...</p>
                 </div>
               ) : suggestions.length > 0 ? (
-                suggestions.map((route, idx) => (
-                  <Card
-                    key={route.id}
-                    hover
-                    className={`p-4 border-l-4 transition-all cursor-pointer ${idx === 0 ? 'border-l-emerald-500 shadow-md ring-1 ring-emerald-500/10' : 'border-l-blue-500'}`}
-                    onClick={() => setMapState('results')}
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-2">
-                        {idx === 0 && (
-                          <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Fastest</span>
-                        )}
-                        <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">{route.duration}</span>
+                <>
+                  {/* IMPROVEMENT: Journey Summary Header for local DB results */}
+                  {distance && (
+                    <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl px-4 py-3">
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Total Distance</p>
+                        <p className="text-sm font-black text-blue-700 dark:text-blue-300">{distance}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-400 mb-0.5">Fare</p>
-                        <span className="text-sm font-bold text-gray-900 dark:text-gray-50">{route.fare}</span>
+                      <div className="w-px h-8 bg-blue-200 dark:bg-blue-700" />
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Est. Duration</p>
+                        <p className="text-sm font-black text-blue-700 dark:text-blue-300">{duration}</p>
+                      </div>
+                      <div className="w-px h-8 bg-blue-200 dark:bg-blue-700" />
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Est. Fare</p>
+                        <p className="text-sm font-black text-blue-700 dark:text-blue-300">{suggestions[0]?.fare || 'N/A'}</p>
                       </div>
                     </div>
+                  )}
 
-                    <div className="flex items-center gap-2 text-sm mb-4">
-                      <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-xl border border-blue-100 dark:border-blue-800">
-                        <span className="bg-blue-600 text-white w-8 h-5 flex items-center justify-center rounded text-[10px] font-black">{route.routeNumber}</span>
-                        <span className="text-xs font-bold text-blue-700 dark:text-blue-400">{route.name}</span>
+                  {suggestions.map((route, idx) => (
+                    <Card
+                      key={route.id}
+                      hover
+                      className={`p-4 border-l-4 transition-all cursor-pointer ${idx === 0 ? 'border-l-emerald-500 shadow-md ring-1 ring-emerald-500/10' : 'border-l-blue-500'}`}
+                      onClick={() => setMapState('results')}
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-2">
+                          {idx === 0 && (
+                            <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Fastest</span>
+                          )}
+                          <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">{route.duration}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400 mb-0.5">Fare</p>
+                          <span className="text-sm font-bold text-gray-900 dark:text-gray-50">{route.fare}</span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex flex-col gap-1.5 mb-4">
-                      <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                        <span className="truncate">From: {currentAddress?.split(',')[0] || route.start_stop}</span>
+                      <div className="flex items-center gap-2 text-sm mb-4">
+                        <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-xl border border-blue-100 dark:border-blue-800">
+                          <span className="bg-blue-600 text-white w-8 h-5 flex items-center justify-center rounded text-[10px] font-black">{route.routeNumber}</span>
+                          <span className="text-xs font-bold text-blue-700 dark:text-blue-400">{route.name || "City Transit Route"}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                        <span className="truncate">To: {destAddress?.split(',')[0] || route.end_stop}</span>
-                      </div>
-                    </div>
 
-                    <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-2 rounded-lg">
-                      <div className="flex gap-4 text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-tight">
-                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {route.distance}</span>
-                        <span className="flex items-center gap-1">
-                          <Zap className={`w-3 h-3 ${route.crowd === 'High' ? 'text-red-500' : 'text-emerald-500'}`} />
-                          {route.crowd} Crowd
-                        </span>
+                      <div className="flex flex-col gap-1.5 mb-4">
+                        <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          <span className="truncate">Board at: {route.start_stop || currentAddress?.split(',')[0]}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] font-bold text-gray-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                          <span className="truncate">Alight at: {route.end_stop || destAddress?.split(',')[0]}</span>
+                        </div>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-gray-300" />
-                    </div>
-                  </Card>
-                ))
-              ) : directionsResponse && getAllTransitSteps(directionsResponse).length > 0 ? (
+
+                      <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-2 rounded-lg">
+                        <div className="flex gap-4 text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-tight">
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {route.distance}</span>
+                          <span className="flex items-center gap-1">
+                            <Zap className={`w-3 h-3 ${route.crowd === 'High' ? 'text-red-500' : 'text-emerald-500'}`} />
+                            {route.crowd} Crowd
+                          </span>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-gray-300" />
+                      </div>
+                    </Card>
+                  ))}
+                </>
+              ) : transitSteps.length > 0 ? (
                 /* SMART FALLBACK: Map through every transit step (bus) required to complete the journey */
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 mb-2 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
-                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  {/* IMPROVEMENT: Journey Summary Header for Google fallback results */}
+                  <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl px-4 py-3">
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Total Distance</p>
+                      <p className="text-sm font-black text-amber-700 dark:text-amber-300">{distance}</p>
+                    </div>
+                    <div className="w-px h-8 bg-amber-200 dark:bg-amber-800" />
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Est. Duration</p>
+                      <p className="text-sm font-black text-amber-700 dark:text-amber-300">{duration}</p>
+                    </div>
+                    <div className="w-px h-8 bg-amber-200 dark:bg-amber-800" />
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Total Fare</p>
+                      <p className="text-sm font-black text-amber-700 dark:text-amber-300">Rs. {computeTotalFare(transitSteps)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                     <div>
                       <p className="text-xs font-bold text-amber-800 dark:text-amber-400">Routes outside live-tracking fleet</p>
                       <p className="text-[10px] text-amber-700/70 dark:text-amber-400/70 mt-0.5">Google Maps suggests taking the following buses.</p>
                     </div>
                   </div>
-                  {getAllTransitSteps(directionsResponse).map((step, idx) => (
+
+                  {transitSteps.map((step, idx) => (
                     <Card
                       key={idx}
                       hover
@@ -475,8 +621,9 @@ const RoutePlanner = () => {
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-gray-400 mb-0.5 tracking-tight">Est. Fare</p>
+                          {/* BUG FIX: Use distance.value (meters) not distance.text (string) */}
                           <span className="text-sm font-bold text-gray-900 dark:text-gray-50">
-                            Rs. {(30 + (parseFloat(step.distance?.text || 0) * 13)).toFixed(2)}
+                            Rs. {(30 + ((step.distance?.value || 0) / 1000) * 13).toFixed(2)}
                           </span>
                         </div>
                       </div>
@@ -575,10 +722,6 @@ const RoutePlanner = () => {
               {destination && (mapState === 'active' || mapState === 'results') && (
                 <Marker
                   position={destination}
-                  icon={{
-                    url: "https://maps.googleapis.com/maps/api/staticmap?markers=color:red|size:mid|label:B|6.9,79.8", // fallback or marker
-                    scaledSize: new window.google.maps.Size(40, 40)
-                  }}
                   options={{
                     icon: {
                       url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
@@ -593,7 +736,7 @@ const RoutePlanner = () => {
                 <DirectionsRenderer
                   directions={directionsResponse}
                   options={{
-                    suppressMarkers: true, // Keep our custom Markers
+                    suppressMarkers: true,
                     polylineOptions: {
                       strokeColor: "#3b82f6",
                       strokeOpacity: 0.9,
@@ -602,6 +745,7 @@ const RoutePlanner = () => {
                   }}
                 />
               )}
+
 
               {/* Start Marker for Results */}
               {mapState === 'results' && userLocation && (
@@ -616,7 +760,7 @@ const RoutePlanner = () => {
             </GoogleMap>
           ) : (
             <div className="h-full min-h-[400px] w-full bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center text-center p-8">
-              <MapPin className="w-16 h-16 text-gray-300 mb-4" />
+              <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mb-4"></div>
               <h3 className="text-xl font-medium text-gray-400">Loading Route Map...</h3>
             </div>
           )}

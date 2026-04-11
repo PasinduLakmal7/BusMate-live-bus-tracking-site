@@ -5,40 +5,39 @@
   <meta charset="UTF-8" />
   <link rel="icon" type="image/png" href="/logo.png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    // Standard Tailwind v3 Config
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            blue: { 50: '#eff6ff', 100: '#dbeafe', 600: '#2563eb', 700: '#1d4ed8' },
-          }
-        }
-      }
-    }
-  </script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; padding: 0; overflow-x: hidden; }
-    img { max-width: 100%; height: auto; display: block; }
-    .absolute.inset-0 { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
-  </style>
-  <script>
+    // Global error handler for debugging
+    window.onerror = function (msg, url, line, col, error) {
+      const errDiv = document.createElement('div');
+      errDiv.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:red;color:white;padding:10px;z-index:9999;font-size:12px;word-break:break-all;';
+      errDiv.innerHTML = '<b>Runtime Error:</b> ' + msg + '<br>at ' + url + ':' + line;
+      document.body.appendChild(errDiv);
+    };
+
     // Critical: Apply dark mode immediately to avoid white flash
-    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    (function () {
+      try {
+        const theme = localStorage.getItem('theme');
+        const supportDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (theme === 'dark' || (!theme && supportDark)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      } catch (e) {
+        console.error("Theme init error:", e);
+      }
+    })();
   </script>
   <title>busMate</title>
 </head>
 
 <body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.jsx"></script>
+  <div id="root">
+    <h1 style="color: #3b82f6; text-align: center; margin-top: 50px; font-family: sans-serif;">BUSMATE CONNECTED -
+      INITIALIZING...</h1>
+  </div>
+  <script type="module" crossorigin src="/src/main.jsx"></script>
 </body>
 
 </html>

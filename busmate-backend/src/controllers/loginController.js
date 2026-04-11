@@ -1,41 +1,46 @@
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const Users = require("../../db/models/usersModel");
-const { loginSchema } = require("@busmate/common");
+const Users = require("../../db/models/usersModel.js");
 
-const handleLogin = async (req, res) => {
-    try {
-        const data = await loginSchema.validate(req.body);
+const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-        const user = await Users.query().where({ email: data.email }).first();
+    // 1. Identify Operand
+    const user = await Users.query().where("email", email).first();
 
-        if (!user) {
-            return res.status(400).json({ status: "error", message: "Invalid email or password" });
-        }
-
-        const isPasswordValid = await bcrypt.compare(data.password, user.password);
-
-        if (!isPasswordValid) {
-            return res.status(400).json({ status: "error", message: "Invalid email or password" });
-        }
-
-        const token = jwt.sign(
-            {
-                username: user.username,
-                id: user.id,
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: "10h" } // Or whatever duration
-        );
-
-        res.json({ message: "Login successful", token, user });
-    } catch (err) {
-        if (err.name === "ValidationError") {
-            return res.status(400).json({ status: "error", message: err.errors[0] });
-        }
-        console.error(err);
-        res.status(500).json({ status: "error", message: "Server error" });
+    if (!user) {
+      return res.status(401).json({ success: false, error: "Authentication Failure: Invalid Credentials" });
     }
+
+    // 2. Validate Security Key
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return res.status(401).json({ success: false, error: "Authentication Failure: Invalid Credentials" });
+    }
+
+    // 3. Establish Session (Demo uses session/cookies)
+    // We'll set a simple cookie for this node demo
+    res.cookie('userId', user.id, { 
+       httpOnly: true, 
+       maxAge: 3600000 * 24, // 24 hours
+       path: '/'
+    });
+
+    // For the UserDashboard mock we built, let's also put it in req.session if available
+    if (req.session) {
+       req.session.userId = user.id;
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Gateway access granted.",
+      user: { id: user.id, username: user.username, email: user.email }
+    });
+
+  } catch (err) {
+    console.error('Login Error:', err);
+    return res.status(500).json({ success: false, error: "Internal Security Breach: Hub Offline" });
+  }
 };
 
-module.exports = handleLogin;
+module.exports = loginUser;

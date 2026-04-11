@@ -20,7 +20,7 @@ function decodePolyline(encoded) {
 
 // Helper: Calculate distance in km between two lat/lon points
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -30,21 +30,43 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-async function simulate() {
-  console.log('🚀 Starting Road-Snapping Movement Simulation...');
+// Linear interpolation fallback for a list of stops
+function linearInterpolate(stops) {
+  const path = [];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const start = stops[i];
+    const end = stops[i + 1];
+    for (let step = 0; step < 200; step++) {
+      const t = step / 200;
+      path.push({
+        lat: start.lat + (end.lat - start.lat) * t,
+        lon: start.lon + (end.lon - start.lon) * t
+      });
+    }
+  }
+  return path;
+}
 
-  // Wipe old locations so we start fresh at terminals!
+let simulationStarted = false;
+
+async function simulate(io = null) {
+  if (simulationStarted) return;
+  simulationStarted = true;
+
+  console.log('🚀 Starting Bus Movement Simulation...');
+
+  // Wipe old locations so we start fresh at terminals
   await pool.query('TRUNCATE TABLE bus_locations RESTART IDENTITY');
-  console.log('🧹 Cleared all old bus locations. Starting fresh at terminals...');
+  console.log('🧹 Cleared old bus locations. Starting fresh at route terminals...');
 
   const API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+  const useGoogleAPI = !!API_KEY;
 
-  if (!API_KEY) {
-    console.error('❌ Missing GOOGLE_MAPS_API_KEY in .env!');
-    process.exit(1);
+  if (!useGoogleAPI) {
+    console.warn('⚠️  No GOOGLE_MAPS_API_KEY — using linear interpolation for all routes (buses still move realistically).');
   }
 
-  // 1. Fetch all routes and their stops
+  // 1. Fetch all route stops
   const routesRes = await pool.query(`
     SELECT route_id, latitude as lat, longitude as lon, stop_order
     FROM route_stops
@@ -57,65 +79,72 @@ async function simulate() {
     rawRoutePaths[row.route_id].push({ lat: parseFloat(row.lat), lon: parseFloat(row.lon) });
   });
 
-  // 2. Use high-res GOOGLE ROADS path to strict-follow actual asphalt!
+  // 2. Build snapped paths (Google API or fallback)
   const snappedRoutePaths = {};
-  const axios = require('axios');
 
-  for (const routeId of Object.keys(rawRoutePaths)) {
-    console.log(`🛣  Fetching real-life road markers from Google for Route ID: ${routeId}...`);
-    const stops = rawRoutePaths[routeId];
-    if (stops.length < 2) continue;
+  if (useGoogleAPI) {
+    const axios = require('axios');
+    for (const routeId of Object.keys(rawRoutePaths)) {
+      const stops = rawRoutePaths[routeId];
+      if (stops.length < 2) continue;
+      try {
+        const routeRes = await pool.query('SELECT route_number FROM routes WHERE route_id = $1', [routeId]);
+        const routeNum = routeRes.rows[0] ? routeRes.rows[0].route_number : '';
+        const isExpressway = routeNum.startsWith('EX-');
 
-    try {
-      // Find the Route Number to see if it's an expressway!
-      const routeRes = await pool.query('SELECT route_number FROM routes WHERE route_id = $1', [routeId]);
-      const routeNum = routeRes.rows[0]?.route_number || "";
-      const isExpressway = routeNum.startsWith("EX-");
+        const origin = stops[0].lat + ',' + stops[0].lon;
+        const destination = stops[stops.length - 1].lat + ',' + stops[stops.length - 1].lon;
+        let waypointsArr = stops.slice(1, -1);
+        if (waypointsArr.length > 20) {
+          // Downsample to max 20 waypoints to avoid Google API MAX_WAYPOINTS_EXCEEDED
+          const step = waypointsArr.length / 20;
+          waypointsArr = Array.from({length: 20}, (_, i) => waypointsArr[Math.floor(i * step)]);
+        }
+        const waypoints = waypointsArr.map(s => s.lat + ',' + s.lon).join('|');
 
-      const origin = `${stops[0].lat},${stops[0].lon}`;
-      const destination = `${stops[stops.length - 1].lat},${stops[stops.length - 1].lon}`;
-      const waypoints = stops.slice(1, -1).map(s => `${s.lat},${s.lon}`).join('|');
+        const url = 'https://maps.googleapis.com/maps/api/directions/json' +
+          '?origin=' + origin +
+          '&destination=' + destination +
+          '&waypoints=optimize:true|' + waypoints +
+          '&avoid=' + (isExpressway ? '' : 'highways') +
+          '&key=' + API_KEY;
 
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=optimize:true|${waypoints}&avoid=${isExpressway ? '' : 'highways'}&key=${API_KEY}`;
-      const response = await axios.get(url);
+        const response = await axios.get(url);
 
-      if (response.data.status === 'OK') {
-        const points = [];
-        const legs = response.data.routes[0].legs;
-        for (let leg of legs) {
-          for (let step of leg.steps) {
-            const decoded = decodePolyline(step.polyline.points);
-            points.push(...decoded);
+        if (response.data.status === 'OK') {
+          const points = [];
+          const legs = response.data.routes[0].legs;
+          for (const leg of legs) {
+            for (const step of leg.steps) {
+              points.push(...decodePolyline(step.polyline.points));
+            }
           }
+          snappedRoutePaths[routeId] = points;
+          console.log('✅ Road-snapped Route ' + routeNum + ' (' + points.length + ' points)');
+        } else {
+          throw new Error(response.data.status);
         }
-        snappedRoutePaths[routeId] = points;
-        console.log(`✅ Road-snapped path generated for Route ${routeNum} (${points.length} points).`);
-      } else {
-        throw new Error(response.data.status);
+        await new Promise(r => setTimeout(r, 200));
+      } catch (err) {
+        console.warn('⚠️  Google API failed for route ' + routeId + ', using fallback:', err.message);
+        snappedRoutePaths[routeId] = linearInterpolate(rawRoutePaths[routeId]);
       }
-      // Small pause to be nice to API limits
-      await new Promise(r => setTimeout(r, 200));
-    } catch (err) {
-      console.warn(`⚠️  Google Roads failed for Route ${routeId}, falling back to linear:`, err.message);
-      // Fallback to linear if API fails
-      const interpolatedPath = [];
-      for (let i = 0; i < stops.length - 1; i++) {
-        const start = stops[i];
-        const end = stops[i + 1];
-        for (let step = 0; step < 200; step++) {
-          const t = step / 200;
-          interpolatedPath.push({ lat: start.lat + (end.lat - start.lat) * t, lon: start.lon + (end.lon - start.lon) * t });
-        }
-      }
-      snappedRoutePaths[routeId] = interpolatedPath;
+    }
+  } else {
+    // No API key — use linear interpolation for all routes
+    for (const routeId of Object.keys(rawRoutePaths)) {
+      const stops = rawRoutePaths[routeId];
+      if (stops.length < 2) continue;
+      snappedRoutePaths[routeId] = linearInterpolate(stops);
     }
   }
-  console.log(`✅ ALL simulation paths successfully road-snapped.`);
 
-  // 3. Fetch buses and strictly force them to start from the beginning!
+  console.log('✅ All simulation paths ready (' + Object.keys(snappedRoutePaths).length + ' routes).');
+
+  // 3. Fetch buses with their assigned routes
   const busesRes = await pool.query(`
-    SELECT DISTINCT ON (b.bus_id) 
-           b.bus_id, s.route_id, r.estimated_duration
+    SELECT DISTINCT ON (b.bus_id)
+           b.bus_id, b.bus_number, s.route_id, r.estimated_duration
     FROM buses b
     JOIN bus_schedules s ON b.bus_id = s.bus_id
     JOIN routes r ON s.route_id = r.route_id
@@ -123,45 +152,40 @@ async function simulate() {
 
   const buses = busesRes.rows.filter(b => snappedRoutePaths[b.route_id]);
 
-  // 4. Initialize all buses at the beginning of their specific paths
+  // 4. Initialize bus states
   const busStates = buses.map(bus => {
     const originalPoints = snappedRoutePaths[bus.route_id];
-
-    // Balance the fleet: Even route IDs start at the end city and move toward Colombo
     const shouldStartReverse = (bus.route_id % 2 === 0);
     const initialPath = shouldStartReverse ? [...originalPoints].reverse() : originalPoints;
 
-    const calculateCumulative = (p) => {
-      let total = 0;
-      const dists = [0];
-      for (let i = 1; i < p.length; i++) {
-        total += calculateDistance(p[i - 1].lat, p[i - 1].lon, p[i].lat, p[i].lon) * 1000;
-        dists.push(total);
-      }
-      return { total, dists };
-    };
+    let total = 0;
+    const dists = [0];
+    for (let i = 1; i < initialPath.length; i++) {
+      total += calculateDistance(initialPath[i - 1].lat, initialPath[i - 1].lon, initialPath[i].lat, initialPath[i].lon) * 1000;
+      dists.push(total);
+    }
 
-    const { total, dists } = calculateCumulative(initialPath);
-    const durationSeconds = (parseFloat(bus.estimated_duration) || 2) * 3600; 
+    const durationSeconds = (parseFloat(bus.estimated_duration) || 2) * 3600;
 
     return {
       id: bus.bus_id,
+      busNumber: bus.bus_number,
       routeId: bus.route_id,
       path: initialPath,
       cumulativeDistances: dists,
       totalRouteMeters: total,
-      currentMeters: 0,
+      currentMeters: Math.random() * total, // stagger starting positions
       waitTime: 0,
-      mps: total / durationSeconds,
+      mps: (total / durationSeconds) * 30, // DEMO MODE: 30x faster
       isReturning: shouldStartReverse,
-      jitter: { 
-        lat: (Math.random() - 0.5) * 0.0001, 
-        lon: (Math.random() - 0.5) * 0.0001 
+      jitter: {
+        lat: (Math.random() - 0.5) * 0.0001,
+        lon: (Math.random() - 0.5) * 0.0001
       }
     };
   });
 
-  console.log(`📡 Simulating ${busStates.length} buses (Auto-Return Enabled) at realistic speeds...`);
+  console.log('📡 Simulating ' + busStates.length + ' buses at realistic speeds...');
 
   let lastUpdate = Date.now();
   let lastCleanup = Date.now();
@@ -185,36 +209,30 @@ async function simulate() {
         continue;
       }
 
-      // Move the bus
       bus.currentMeters += bus.mps * deltaTime;
 
-      // TERMINAL LOGIC: If reached the end, wait, then turn around!
+      // Terminal logic: reached end, wait then reverse
       if (bus.currentMeters >= bus.totalRouteMeters) {
         bus.currentMeters = bus.totalRouteMeters;
-        bus.waitTime = 30; // Wait 30 seconds at the terminal
-        
-        // REVERSE THE PATH FOR THE RETURN TRIP
-        bus.path = [...bus.path].reverse();
-        const nextData = (() => {
-          let total = 0;
-          const dists = [0];
-          for (let i = 1; i < bus.path.length; i++) {
-            total += calculateDistance(bus.path[i - 1].lat, bus.path[i - 1].lon, bus.path[i].lat, bus.path[i].lon) * 1000;
-            dists.push(total);
-          }
-          return { total, dists };
-        })();
+        bus.waitTime = 30;
 
-        bus.cumulativeDistances = nextData.dists;
-        bus.totalRouteMeters = nextData.total;
+        bus.path = [...bus.path].reverse();
+
+        let total = 0;
+        const dists = [0];
+        for (let i = 1; i < bus.path.length; i++) {
+          total += calculateDistance(bus.path[i - 1].lat, bus.path[i - 1].lon, bus.path[i].lat, bus.path[i].lon) * 1000;
+          dists.push(total);
+        }
+
+        bus.cumulativeDistances = dists;
+        bus.totalRouteMeters = total;
         bus.currentMeters = 0;
         bus.isReturning = !bus.isReturning;
-        
-        console.log(`🔄 Bus ${bus.id} turning around at terminal for ${bus.isReturning ? 'Reverse' : 'Forward'} trip.`);
         continue;
       }
 
-      // Find current position on path
+      // Find current position via binary search on cumulative distances
       let foundIndex = 0;
       while (foundIndex < bus.cumulativeDistances.length - 1 && bus.cumulativeDistances[foundIndex + 1] < bus.currentMeters) {
         foundIndex++;
@@ -224,27 +242,55 @@ async function simulate() {
       const nextPoint = bus.path[Math.min(foundIndex + 1, bus.path.length - 1)];
 
       const segStartDist = bus.cumulativeDistances[foundIndex];
-      const segEndDist = bus.cumulativeDistances[foundIndex + 1];
+      const segEndDist = bus.cumulativeDistances[Math.min(foundIndex + 1, bus.cumulativeDistances.length - 1)];
       const segmentLen = segEndDist - segStartDist;
       const t = segmentLen > 0 ? (bus.currentMeters - segStartDist) / segmentLen : 0;
 
       const lat = currentPoint.lat + (nextPoint.lat - currentPoint.lat) * t + bus.jitter.lat;
       const lon = currentPoint.lon + (nextPoint.lon - currentPoint.lon) * t + bus.jitter.lon;
-
       const heading = (Math.atan2(nextPoint.lon - currentPoint.lon, nextPoint.lat - currentPoint.lat) * 180 / Math.PI) || 0;
-      const speedKph = (bus.mps * 3.6);
+      // Clamp displayed speed to look like a realistic bus (40-60 km/h range) while moving fast
+      const baseRealSpeedForUI = (bus.mps / 30) * 3.6; // Get original real speed back
+      const speedKph = Math.max(25, Math.min(80, baseRealSpeedForUI + (Math.random() * 5)));
 
       await pool.query(
-        `INSERT INTO bus_locations (bus_id, latitude, longitude, speed, recorded_at, heading)
-         VALUES ($1, $2, $3, $4, NOW(), $5)`,
-        [bus.id, lat.toFixed(8), lon.toFixed(8), speedKph, heading]
+        'INSERT INTO bus_locations (bus_id, latitude, longitude, speed, recorded_at, heading) VALUES ($1, $2, $3, $4, NOW(), $5)',
+        [bus.id, lat.toFixed(8), lon.toFixed(8), speedKph.toFixed(1), heading.toFixed(2)]
       );
+
+      // Broadcast to socket
+      if (io) {
+        io.to('route:' + bus.routeId).emit('bus:location', {
+          id: bus.id,
+          busId: bus.busNumber,
+          routeId: bus.routeId,
+          lat,
+          lon,
+          speed: speedKph,
+          heading,
+          ts: new Date().toISOString()
+        });
+        io.to('admin').emit('bus:location', {
+          id: bus.id,
+          busId: bus.busNumber,
+          routeId: bus.routeId,
+          lat,
+          lon,
+          speed: speedKph,
+          heading,
+          ts: new Date().toISOString()
+        });
+      }
     }
-    console.log(`🚀 [${new Date().toLocaleTimeString()}] Simulation sync: Delta ${deltaTime.toFixed(3)}s`);
   }
 
   setInterval(updateMovement, 1000);
   updateMovement();
 }
 
-simulate().catch(err => console.error('❌ Simulation Error:', err));
+// Allow calling either via 'node simulate_movement.js' OR as a module in server.js
+if (require.main === module) {
+  simulate().catch(err => console.error('❌ Simulation Error:', err));
+}
+
+module.exports = simulate;

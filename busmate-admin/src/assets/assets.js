@@ -1,5 +1,5 @@
-import logo1 from './logo1.avif'
+import logo from './logo.png'
 
 export const assets = {
-    logo: logo1,
+    logo: logo,
 }

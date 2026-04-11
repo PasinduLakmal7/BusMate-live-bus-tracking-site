@@ -26,8 +26,16 @@ const registerUser = async (req, res) => {
       password: hashed,
     });
 
+    // 3. Establish Session (Instant Authorization)
+    res.cookie('userId', newUser.id, { 
+       httpOnly: true, 
+       maxAge: 3600000 * 24, // 24 hours
+       path: '/'
+    });
+
     return res.status(201).json({
-      message: "User registered",
+      success: true,
+      message: "Security profile established. Access granted.",
       user: { id: newUser.id, username: newUser.username, email: newUser.email },
     });
   } catch (err) {

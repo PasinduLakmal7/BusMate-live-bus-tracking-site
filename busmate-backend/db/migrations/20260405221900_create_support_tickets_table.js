@@ -20,3 +20,6 @@ exports.up = function (knex) {
 exports.down = function (knex) {
   return knex.schema.dropTable('support_tickets');
 };
+
+import React from 'react'
+

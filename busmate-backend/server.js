@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const app = express();
 const server = require('http').createServer(app);
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const authRouter = require("./src/routers/authRouter.js");
 const driverRouter = require("./src/routers/driverRouter.js");
 require("dotenv").config();
@@ -45,17 +46,28 @@ redis.on('error', (err) => {
 
 app.use(helmet());
 app.use(cors({
-    origin: '*',
+    origin: (origin, callback) => {
+        // ALLOW ALL for this dev stage, but explicitly echoed (needed for credentials)
+        callback(null, origin || '*');
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+    credentials: true,
 }))
 app.use(express.json());
+app.use(cookieParser());
 
 const siteRouter = require("./src/routers/siteRouter.js");
+const alertsRouter = require("./src/routers/alertsRouter.js");
+const userRouter = require("./src/routers/userRouter.js");
+const favoritesRouter = require("./src/routers/favoritesRouter.js");
 
 app.use("/auth", authRouter);
 app.use("/drivers", driverRouter);
 app.use("/site", siteRouter);
+app.use("/alerts", alertsRouter);
+app.use("/user", userRouter);
+app.use("/favorites", favoritesRouter);
 
 app.get('/', (req, res) => {
     res.json('hi')
@@ -63,6 +75,10 @@ app.get('/', (req, res) => {
 
 // initialize socket handlers (authenticated)
 initSocketServer(io, redis);
+
+// 🚀 Start Movement Simulation (for demo purposes)
+const startSimulation = require('./simulate_movement.js');
+startSimulation(io);
 
 // HTTP endpoint: return all bus stops from DB
 app.get('/stops', async (req, res) => {
