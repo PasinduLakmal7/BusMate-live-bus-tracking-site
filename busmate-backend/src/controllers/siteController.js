@@ -1,6 +1,28 @@
 const pool = require('../../db.js');
 
 /**
+ * Get all available buses with their basic metadata.
+ */
+exports.getAllBuses = async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                b.bus_id as id,
+                b.bus_number as "busNumber",
+                b.bus_type as type,
+                dc.name as "depotName"
+            FROM buses b
+            JOIN depot_companies dc ON b.depot_id = dc.depot_id
+            ORDER BY b.bus_number ASC
+        `);
+        return res.json({ success: true, buses: result.rows });
+    } catch (err) {
+        console.error('getAllBuses error', err);
+        return res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+/**
  * Get all available routes with their basic info.
  */
 exports.getAllRoutes = async (req, res) => {
@@ -150,6 +172,8 @@ exports.getBusById = async (req, res) => {
 
         // 2. Get live location and speed (Check Redis first for real-time, fallback to DB)
         let location = null;
+        let isReturning = false;
+
         try {
             const { redis: r, isRedisAlive } = require('../utils/redisClient');
             if (isRedisAlive()) {
@@ -163,7 +187,8 @@ exports.getBusById = async (req, res) => {
                         heading: data.heading,
                         recorded_at: data.ts
                     };
-                    console.log(`[DEBUG] Real-time location found in Redis for bus ${bus.id}`);
+                    isReturning = data.isReturning || data.is_returning || false;
+                    console.log(`[DEBUG] Real-time location found in Redis for bus ${bus.id}. returning: ${isReturning}`);
                 }
             }
         } catch (err) {
@@ -172,14 +197,24 @@ exports.getBusById = async (req, res) => {
 
         if (!location) {
             const locationQuery = await pool.query(`
-                SELECT latitude as lat, longitude as lon, speed, heading, recorded_at 
+                SELECT latitude as lat, longitude as lon, speed, heading, recorded_at, is_returning
                 FROM bus_locations 
                 WHERE bus_id = $1 
                 ORDER BY recorded_at DESC 
                 LIMIT 1
             `, [bus.id]);
-            location = locationQuery.rows[0] || null;
-            if (location) console.log(`[DEBUG] Latest location found in PostgreSQL for bus ${bus.id}`);
+            const locRow = locationQuery.rows[0];
+            if (locRow) {
+                location = {
+                    lat: locRow.lat,
+                    lon: locRow.lon,
+                    speed: locRow.speed,
+                    heading: locRow.heading,
+                    recorded_at: locRow.recorded_at
+                };
+                isReturning = locRow.is_returning || false;
+                console.log(`[DEBUG] Latest location found in PostgreSQL for bus ${bus.id}. returning: ${isReturning}`);
+            }
         }
 
         // 3. Get route and stops
@@ -198,9 +233,7 @@ exports.getBusById = async (req, res) => {
             stops = stopsRes.rows;
         }
 
-        // 4. Calculate "Upcoming" stops (Mock logic: just find next 3 stops if we can't determine current exactly)
-        // In a real app we'd find the stop we just passed.
-        // 4. Calculate dynamic "Upcoming" vs "Departed" status based on real-time location
+        // 4. Calculate dynamic "Upcoming" vs "Departed" status based on real-time location and direction
         let closestStopOrder = 0;
         if (location && stops.length > 0) {
             let minDistance = Infinity;
@@ -213,11 +246,27 @@ exports.getBusById = async (req, res) => {
             });
         }
 
-        const upcomingStops = stops.map(s => ({
-            ...s,
-            eta: s.order < closestStopOrder ? 'Passed' : `${Math.floor(Math.random() * 20) + (s.order - closestStopOrder + 1) * 5} mins`,
-            status: s.order <= closestStopOrder ? 'Departed' : 'Upcoming'
-        }));
+        // Flip status logic based on direction
+        const upcomingStops = stops.map(s => {
+            let status = 'Upcoming';
+            let eta = 'Calculating...';
+            
+            if (!isReturning) {
+                // Forward: Start -> End (Order 1 -> N)
+                status = s.order <= closestStopOrder ? 'Departed' : 'Upcoming';
+                if (s.order < closestStopOrder) eta = 'Passed';
+                else if (s.order === closestStopOrder) eta = 'NOW';
+                else eta = `${Math.floor(Math.random() * 10) + (s.order - closestStopOrder) * 5} mins`;
+            } else {
+                // Returning: End -> Start (Order N -> 1)
+                status = s.order >= closestStopOrder ? 'Departed' : 'Upcoming';
+                if (s.order > closestStopOrder) eta = 'Passed';
+                else if (s.order === closestStopOrder) eta = 'NOW';
+                else eta = `${Math.floor(Math.random() * 10) + (closestStopOrder - s.order) * 5} mins`;
+            }
+
+            return { ...s, status, eta };
+        });
 
         // 5. Calculate live occupancy from crowd reports
         const crowdRes = await pool.query(`
@@ -225,7 +274,7 @@ exports.getBusById = async (req, res) => {
             FROM crowd_reports
             WHERE bus_id = $1 AND reported_at > NOW() - INTERVAL '1 hour'
         `, [bus.id]);
-        const occupancy = crowdRes.rows[0].avgLoad || 20; // Default to 20% if no reports
+        const occupancy = crowdRes.rows[0].avgLoad || 20;
 
         return res.json({ 
             success: true, 
@@ -234,7 +283,8 @@ exports.getBusById = async (req, res) => {
                 location,
                 route: routeInfo,
                 upcomingStops,
-                occupancy
+                occupancy,
+                isReturning
             }
         });
     } catch (err) {
@@ -253,11 +303,12 @@ exports.getAllStops = async (req, res) => {
                 rs.stop_id as id, 
                 rs.stop_name as name, 
                 r.route_number as route,
+                rs.stop_order as "order",
                 rs.latitude as lat, 
                 rs.longitude as lng 
             FROM route_stops rs
             JOIN routes r ON rs.route_id = r.route_id
-            ORDER BY rs.stop_name ASC
+            ORDER BY rs.route_id, rs.stop_order ASC
         `);
         return res.json({ success: true, stops: result.rows });
     } catch (err) {

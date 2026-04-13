@@ -11,6 +11,7 @@ router.get('/suggest', searchController.suggestRoutes);
 // Schedule management
 router.get('/schedules', siteController.getAllSchedules);
 router.get('/routes/:id/timetable', siteController.getRouteTimetable);
+router.get('/buses', siteController.getAllBuses);
 router.get('/buses/:id', siteController.getBusById);
 router.get('/stops', siteController.getAllStops);
 router.get('/stops/:id', siteController.getStopById);

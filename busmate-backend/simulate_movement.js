@@ -185,6 +185,34 @@ async function simulate(io = null) {
     };
   });
 
+  // ▬▬ DEMO OVERRIDE 1: Teleport one Route 100 bus to Rawathawaththa ▬▬
+  const demoBus100 = busStates.find(b => String(b.routeId) === '14'); 
+  if (demoBus100) {
+    console.log(`📡 DEMO: Teleporting Bus ${demoBus100.busNumber} to Rawathawaththa (Heading to Pettah)...`);
+    demoBus100.currentMeters = demoBus100.totalRouteMeters * 0.22; 
+    demoBus100.isReturning = false; 
+  }
+
+  // ▬▬ DEMO OVERRIDE 2: Teleport one Route 101 bus to Galkissa ▬▬
+  const demoBus101 = busStates.find(b => String(b.routeId) === '15'); 
+  if (demoBus101) {
+    console.log(`📡 DEMO: Teleporting Bus ${demoBus101.busNumber} to Galkissa (Heading to Moratuwa)...`);
+    // In return mode (Pettah -> Moratuwa), Galkissa is about 65% in
+    demoBus101.currentMeters = demoBus101.totalRouteMeters * 0.65; 
+    demoBus101.isReturning = true; 
+  }
+
+  // ▬▬ DEMO OVERRIDE 3: Teleport one Route 255 bus to Piliyandala (Heading to Mount Lavinia) ▬▬
+  const demoBus255 = busStates.find(b => String(b.routeId) === '13'); 
+  if (demoBus255) {
+    console.log(`📡 DEMO: Teleporting Bus ${demoBus255.busNumber} to Piliyandala (Heading to Mount Lavinia)...`);
+    // Piliyandala is about 20% along the path starting from Kottawa (Return trip)
+    demoBus255.currentMeters = demoBus255.totalRouteMeters * 0.20; 
+    demoBus255.isReturning = true; 
+    // Ensure the path is reversed for this bus
+    demoBus255.path = [...snappedRoutePaths[demoBus255.routeId]].reverse();
+  }
+
   console.log('📡 Simulating ' + busStates.length + ' buses at realistic speeds...');
 
   let lastUpdate = Date.now();
@@ -254,13 +282,13 @@ async function simulate(io = null) {
       const speedKph = Math.max(25, Math.min(80, baseRealSpeedForUI + (Math.random() * 5)));
 
       await pool.query(
-        'INSERT INTO bus_locations (bus_id, latitude, longitude, speed, recorded_at, heading) VALUES ($1, $2, $3, $4, NOW(), $5)',
-        [bus.id, lat.toFixed(8), lon.toFixed(8), speedKph.toFixed(1), heading.toFixed(2)]
+        'INSERT INTO bus_locations (bus_id, latitude, longitude, speed, recorded_at, heading, is_returning) VALUES ($1, $2, $3, $4, NOW(), $5, $6)',
+        [bus.id, lat.toFixed(8), lon.toFixed(8), speedKph.toFixed(1), heading.toFixed(2), bus.isReturning || false]
       );
 
       // Broadcast to socket
       if (io) {
-        io.to('route:' + bus.routeId).emit('bus:location', {
+        const payload = {
           id: bus.id,
           busId: bus.busNumber,
           routeId: bus.routeId,
@@ -268,18 +296,11 @@ async function simulate(io = null) {
           lon,
           speed: speedKph,
           heading,
+          isReturning: bus.isReturning || false,
           ts: new Date().toISOString()
-        });
-        io.to('admin').emit('bus:location', {
-          id: bus.id,
-          busId: bus.busNumber,
-          routeId: bus.routeId,
-          lat,
-          lon,
-          speed: speedKph,
-          heading,
-          ts: new Date().toISOString()
-        });
+        };
+        io.to('route:' + bus.routeId).emit('bus:location', payload);
+        io.to('admin').emit('bus:location', payload);
       }
     }
   }
