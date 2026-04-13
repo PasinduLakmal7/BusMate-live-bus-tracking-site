@@ -149,7 +149,11 @@ const BusDetails = () => {
        if (data.busId === id || String(data.id) === String(busData?.id)) {
           setBusData(prev => {
              if (!prev) return prev;
-             return { ...prev, location: { lat: data.lat, lon: data.lon, speed: data.speed, heading: data.heading, recorded_at: data.ts } };
+             return { 
+               ...prev, 
+               isReturning: data.isReturning || data.is_returning || prev.isReturning,
+               location: { lat: data.lat, lon: data.lon, speed: data.speed, heading: data.heading, recorded_at: data.ts } 
+             };
           });
        }
     });
@@ -285,9 +289,14 @@ const BusDetails = () => {
                </button>
              </h1>
              {busData.route && (
-               <span className="text-lg bg-blue-600/10 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 px-4 py-1.5 rounded-2xl border border-blue-100 dark:border-blue-900/30 font-black tracking-tighter">
-                 #{busData.route.routeNumber}
-               </span>
+               <div className="flex gap-2">
+                 <span className="text-lg bg-blue-600/10 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 px-4 py-1.5 rounded-2xl border border-blue-100 dark:border-blue-900/30 font-black tracking-tighter">
+                   #{busData.route.routeNumber}
+                 </span>
+                 <span className="text-lg bg-gray-500/10 text-gray-500 dark:text-gray-400 px-4 py-1.5 rounded-2xl border border-gray-200 dark:border-gray-700 font-black tracking-tighter uppercase">
+                   To {busData.isReturning ? busData.route.start : busData.route.end}
+                 </span>
+               </div>
              )}
           </div>
           <p className="text-lg text-gray-500 dark:text-gray-400 font-medium mt-2">
@@ -381,7 +390,7 @@ const BusDetails = () => {
                </h3>
                {busData.route && (
                  <div className="text-[10px] font-black uppercase tracking-[0.15em] text-gray-500 bg-gray-50 dark:bg-gray-800 px-4 py-2 rounded-xl border border-gray-100 dark:border-gray-700">
-                   {busData.route.start} <ChevronRight className="inline w-3 h-3 mx-1" /> {busData.route.end}
+                   {busData.isReturning ? busData.route.end : busData.route.start} <ChevronRight className="inline w-3 h-3 mx-1" /> {busData.isReturning ? busData.route.start : busData.route.end}
                  </div>
                )}
              </div>
@@ -389,7 +398,10 @@ const BusDetails = () => {
              <div className="space-y-0 relative">
                <div className="absolute left-6 top-2 bottom-2 w-0.5 bg-gray-100 dark:bg-gray-800"></div>
 
-               {busData.upcomingStops?.map((stop, index) => {
+               {(busData.isReturning 
+                    ? [...(busData.upcomingStops || [])].reverse() 
+                    : (busData.upcomingStops || [])
+                ).map((stop, index) => {
                  const isCurrent = stop.status === 'Departed' && (index + 1 === busData.upcomingStops.length || busData.upcomingStops[index + 1].status === 'Upcoming');
                  
                  return (
@@ -469,9 +481,9 @@ const BusDetails = () => {
              <div className="absolute bottom-8 left-8 right-8">
                 <Button 
                    onClick={() => navigate('/live')}
-                   className="w-full bg-white dark:bg-gray-100 text-gray-900 border-none font-black shadow-2xl py-5 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs uppercase tracking-[0.2em]"
+                   className="w-full bg-blue-600 hover:bg-blue-700 text-white border-none font-black shadow-2xl shadow-blue-500/30 py-5 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs uppercase tracking-[0.2em]"
                 >
-                  <MapIcon className="w-5 h-5 text-blue-600" /> View Comprehensive Map
+                  <MapIcon className="w-5 h-5 text-white" /> View Comprehensive Map
                 </Button>
              </div>
            </Card>

@@ -28,6 +28,7 @@ svg {
   0% {
     transform: translateX(0%);
   }
+
   100% {
     transform: translateX(-50%);
   }
@@ -35,4 +36,61 @@ svg {
 
 .animate-scroll-text {
   animation: scroll-text 20s linear infinite;
+}
+
+/* User location pulsing dot */
+@keyframes pulse {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  70%  { transform: scale(2.5); opacity: 0; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* ── Google Autocomplete "Elite" Styling ── */
+.pac-container {
+  background-color: rgba(15, 15, 20, 0.95) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+  margin-top: 8px !important;
+  padding: 8px 0 !important;
+  font-family: inherit !important;
+  z-index: 9999 !important;
+}
+
+.pac-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.03) !important;
+  padding: 12px 20px !important;
+  color: #64748b !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.pac-item:hover {
+  background-color: rgba(37, 99, 235, 0.1) !important;
+}
+
+.pac-item-query {
+  color: #f8fafc !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  padding-right: 5px !important;
+}
+
+.pac-icon {
+  filter: invert(1) brightness(0.8) !important;
+  opacity: 0.5 !important;
+}
+
+.pac-matched {
+  color: #3b82f6 !important;
+}
+
+.hdpi.pac-logo::after {
+  filter: grayscale(1) invert(1) opacity(0.2) !important;
+  margin: 10px !important;
 }

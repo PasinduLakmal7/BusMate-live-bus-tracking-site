@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { User, Map, History, Bell, Globe, Moon, ChevronRight, LogOut, Edit3, Shield, Mail } from 'lucide-react';
+import { User, Map, History, Bell, Globe, Moon, ChevronRight, LogOut, Edit3, Shield, Mail, Check, X, Camera } from 'lucide-react';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import { useNavigate, Link } from 'react-router-dom';
+
+const EMOJI_OPTIONS = ['🚍','🚌','🧑','👨','👩','🧔','👨‍💼','👩‍💼','🚀','⚡','🎯','🔵'];
 
 const UserDashboard = () => {
   const navigate = useNavigate();
@@ -11,24 +13,27 @@ const UserDashboard = () => {
   const [darkMode, setDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const [savedCount, setSavedCount] = useState(0);
 
-  // Dashboard Sync: Listen for dark mode changes elsewhere (like Navbar)
+  // Edit profile modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editUsername, setEditUsername] = useState('');
+  const [editEmoji, setEditEmoji] = useState('🚍');
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+
   useEffect(() => {
     const checkDark = () => setDarkMode(document.documentElement.classList.contains('dark'));
-    
-    // Listen for custom event
     window.addEventListener('theme-change', checkDark);
-    
-    // Also use MutationObserver as a fallback for robustness
     const observer = new MutationObserver(checkDark);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
-    // Fetch real user data from backend
     const fetchUserData = async () => {
       try {
         const res = await fetch('/api/user/profile', { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
           setUser(data.user);
+          setEditUsername(data.user.username || '');
+          setEditEmoji(data.user.profilePic || '🚍');
         }
       } catch (err) {
         console.error("Dashboard: Failed to load profile", err);
@@ -36,17 +41,13 @@ const UserDashboard = () => {
         setLoading(false);
       }
     };
-
     fetchUserData();
 
-    // Fetch real saved nodes from database
     const fetchStats = async () => {
       try {
         const res = await fetch('/api/favorites', { credentials: 'include' });
         const data = await res.json();
-        if (data.success) {
-          setSavedCount(data.favorites.length);
-        }
+        if (data.success) setSavedCount(data.favorites.length);
       } catch (err) {
         console.error("Dashboard: Failed to load stats", err);
       }
@@ -55,6 +56,32 @@ const UserDashboard = () => {
 
     return () => window.removeEventListener('theme-change', checkDark);
   }, []);
+
+  const handleSaveProfile = async () => {
+    if (!editUsername.trim()) { setSaveMsg('Username cannot be empty.'); return; }
+    setSaving(true);
+    setSaveMsg('');
+    try {
+      const res = await fetch('/api/user/profile', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: editUsername.trim(), profilePic: editEmoji })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUser(prev => ({ ...prev, username: editUsername.trim(), profilePic: editEmoji }));
+        setSaveMsg('✓ Profile updated!');
+        setTimeout(() => { setShowEditModal(false); setSaveMsg(''); }, 1000);
+      } else {
+        setSaveMsg(data.message || 'Update failed. Try again.');
+      }
+    } catch (err) {
+      setSaveMsg('Network error. Check your connection.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const toggleDarkMode = () => {
     const isNowDark = !darkMode;
@@ -71,14 +98,8 @@ const UserDashboard = () => {
 
   const handleSignOut = async () => {
     try {
-      const res = await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include'
-      });
-      if (res.ok) {
-        setUser(null);
-        navigate('/');
-      }
+      const res = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      if (res.ok) { setUser(null); navigate('/'); }
     } catch (err) {
       console.error("Sign-out failure:", err);
     }
@@ -92,7 +113,6 @@ const UserDashboard = () => {
     );
   }
 
-  // GUEST PROFILE HUB
   if (!user) {
     return (
       <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-20 min-h-[70vh] flex flex-col items-center justify-center text-center">
@@ -103,7 +123,7 @@ const UserDashboard = () => {
           Operational Profile <span className="text-blue-600">Pending</span>
         </h1>
         <p className="text-gray-500 font-bold max-w-lg mb-12 uppercase tracking-widest text-[10px] leading-relaxed">
-          Please authorize your identity session to access your personal transit intelligence hub. New operatives can establish a profile at the registry gateway below.
+          Please authorize your identity session to access your personal transit intelligence hub.
         </p>
         <div className="flex flex-col sm:flex-row items-center gap-6">
           <Link to="/login">
@@ -124,7 +144,87 @@ const UserDashboard = () => {
   return (
     <div className="max-w-[90%] 2xl:max-w-[80%] mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16 pb-20">
 
-      {/* Profile Header (Dynamic) */}
+      {/* ── Edit Profile Modal ── */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowEditModal(false)}
+          />
+          {/* Modal */}
+          <div className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-[2rem] shadow-2xl border border-gray-100 dark:border-gray-800 p-8 animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowEditModal(false)}
+              className="absolute top-5 right-5 p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-red-500 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h2 className="text-2xl font-black text-gray-900 dark:text-gray-50 mb-1">Edit Profile</h2>
+            <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-8">Update your display name and avatar</p>
+
+            {/* Avatar Picker */}
+            <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3">Choose Avatar</p>
+            <div className="grid grid-cols-6 gap-2 mb-6">
+              {EMOJI_OPTIONS.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => setEditEmoji(emoji)}
+                  className={`text-2xl h-12 w-full flex items-center justify-center rounded-xl border-2 transition-all ${
+                    editEmoji === emoji
+                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 scale-110'
+                      : 'border-gray-100 dark:border-gray-800 hover:border-blue-300'
+                  }`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+
+            {/* Username Input */}
+            <p className="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">Display Name</p>
+            <input
+              type="text"
+              value={editUsername}
+              onChange={e => setEditUsername(e.target.value)}
+              maxLength={32}
+              placeholder="Your name..."
+              className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-blue-500 mb-6 transition-all"
+            />
+
+            {saveMsg && (
+              <p className={`text-xs font-bold mb-4 ${saveMsg.startsWith('✓') ? 'text-emerald-500' : 'text-red-500'}`}>
+                {saveMsg}
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <Button
+                onClick={() => setShowEditModal(false)}
+                variant="secondary"
+                className="flex-1 py-3 font-bold text-sm rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveProfile}
+                disabled={saving}
+                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-xl shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                {saving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Header */}
       <div className="bg-gradient-to-br from-[#1e40af] via-[#1d4ed8] to-[#312e81] rounded-[2.5rem] p-8 sm:p-12 mb-10 text-white shadow-2xl relative overflow-hidden ring-1 ring-white/10">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-white/5 rounded-full blur-[100px] translate-x-1/3 -translate-y-1/3"></div>
         <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-10">
@@ -132,7 +232,11 @@ const UserDashboard = () => {
             <div className="w-32 h-32 md:w-36 md:h-36 bg-white/15 backdrop-blur-xl rounded-[2rem] border-[6px] border-white/20 flex items-center justify-center text-5xl shadow-2xl transition-transform duration-500 group-hover:rotate-6">
               {user?.profilePic || '🚍'}
             </div>
-            <button className="absolute -bottom-2 -right-2 bg-blue-500 text-white p-3 rounded-2xl border-4 border-[#1e40af] shadow-xl hover:bg-blue-400 transition-all hover:scale-110 active:scale-95">
+            <button
+              onClick={() => { setEditUsername(user?.username || ''); setEditEmoji(user?.profilePic || '🚍'); setShowEditModal(true); }}
+              className="absolute -bottom-2 -right-2 bg-blue-500 text-white p-3 rounded-2xl border-4 border-[#1e40af] shadow-xl hover:bg-blue-400 transition-all hover:scale-110 active:scale-95"
+              title="Edit Profile"
+            >
               <Edit3 className="w-5 h-5" />
             </button>
           </div>
@@ -141,11 +245,19 @@ const UserDashboard = () => {
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest border border-white/10 mb-4">
               <Shield className="w-3 h-3 text-blue-300" /> Platinum Member
             </div>
-            <h1 className="text-4xl md:text-5xl font-black mb-2 tracking-tight">{user?.username || 'Guest'}</h1>
+            <div className="flex items-center gap-3 justify-center md:justify-start mb-2">
+              <h1 className="text-4xl md:text-5xl font-black tracking-tight">{user?.username || 'Guest'}</h1>
+              <button
+                onClick={() => { setEditUsername(user?.username || ''); setEditEmoji(user?.profilePic || '🚍'); setShowEditModal(true); }}
+                className="bg-white/10 hover:bg-white/20 transition-colors p-2 rounded-xl border border-white/10"
+                title="Edit name"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+            </div>
             <p className="text-blue-100/80 font-bold mb-6 flex items-center justify-center md:justify-start gap-2">
               <Mail className="w-4 h-4 opacity-60" /> {user?.email || 'Not logged in'}
             </p>
-
             <div className="group cursor-default">
               <p className="text-white text-3xl font-black transition-transform group-hover:-translate-y-1">{savedCount}</p>
               <p className="text-blue-200/50 text-[10px] uppercase tracking-widest font-black">Saved Nodes</p>
@@ -155,21 +267,15 @@ const UserDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-
         {/* Main Settings Area */}
         <div className="lg:col-span-2 space-y-8">
-
           <div className="flex items-center gap-3 px-2">
             <div className="w-1.5 h-6 bg-blue-600 rounded-full"></div>
             <h2 className="text-2xl font-black text-gray-900 dark:text-gray-50 tracking-tight">Account & Security</h2>
           </div>
 
           <Card className="overflow-hidden border border-gray-100 dark:border-gray-800 shadow-xl shadow-gray-200/20 dark:shadow-none divide-y divide-gray-50 dark:divide-gray-800/50">
-            {/* Nav Item */}
-            <div
-              onClick={() => navigate('/live')}
-              className="flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-all group"
-            >
+            <div onClick={() => navigate('/live')} className="flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-all group">
               <div className="flex items-center gap-5">
                 <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 p-4 rounded-[1.25rem] group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
                   <Map className="w-6 h-6" />
@@ -182,11 +288,7 @@ const UserDashboard = () => {
               <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
             </div>
 
-            {/* Nav Item */}
-            <div
-              onClick={() => navigate('/planner')}
-              className="flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-all group"
-            >
+            <div onClick={() => navigate('/planner')} className="flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-all group">
               <div className="flex items-center gap-5">
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 p-4 rounded-[1.25rem] group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-sm">
                   <History className="w-6 h-6" />
@@ -199,11 +301,7 @@ const UserDashboard = () => {
               <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
             </div>
 
-            {/* Nav Item */}
-            <div
-              onClick={() => navigate('/alerts')}
-              className="flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-all group"
-            >
+            <div onClick={() => navigate('/alerts')} className="flex items-center justify-between p-6 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-all group">
               <div className="flex items-center gap-5">
                 <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-600 p-4 rounded-[1.25rem] group-hover:bg-amber-600 group-hover:text-white transition-all shadow-sm">
                   <Bell className="w-6 h-6" />
@@ -223,7 +321,6 @@ const UserDashboard = () => {
           </div>
 
           <Card className="overflow-hidden border border-gray-100 dark:border-gray-800 shadow-xl shadow-gray-200/20 dark:shadow-none divide-y divide-gray-50 dark:divide-gray-800/50">
-            {/* Selection Item */}
             <div className="flex items-center justify-between p-6">
               <div className="flex items-center gap-5">
                 <div className="bg-purple-100 dark:bg-purple-900/20 text-purple-600 p-4 rounded-[1.25rem]">
@@ -241,7 +338,6 @@ const UserDashboard = () => {
               </select>
             </div>
 
-            {/* Toggle Item */}
             <div className="flex items-center justify-between p-6">
               <div className="flex items-center gap-5">
                 <div className="bg-gray-900 text-gray-100 p-4 rounded-[1.25rem] ring-1 ring-white/10 shadow-lg">
@@ -254,7 +350,7 @@ const UserDashboard = () => {
               </div>
               <button
                 onClick={toggleDarkMode}
-                className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 ease-in-out focus:outline-none ring-2 ring-offset-2 ring-offset-white dark:ring-offset-gray-900 ${darkMode ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 ease-in-out focus:outline-none ring-2 ring-offset-2 ring-offset-white dark:ring-offset-gray-900 ${darkMode ? 'bg-blue-600 ring-blue-500/30' : 'bg-gray-200 dark:bg-gray-700 ring-gray-200/50'}`}
               >
                 <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition-transform duration-300 ease-in-out ${darkMode ? 'translate-x-[0.95rem]' : 'translate-x-[0rem]'}`} />
               </button>
@@ -268,10 +364,9 @@ const UserDashboard = () => {
           >
             <LogOut className="w-6 h-6" /> Sign Out Securely
           </Button>
-
         </div>
 
-        {/* Sidebar Info */}
+        {/* Sidebar */}
         <div className="space-y-8">
           <Card className="p-8 bg-gradient-to-br from-indigo-50/50 to-blue-50/50 dark:from-blue-900/10 dark:to-indigo-900/10 border-blue-100 dark:border-blue-900/30 rounded-[2rem] shadow-sm relative overflow-hidden">
             <div className="absolute -right-4 -bottom-4 opacity-5 pointer-events-none">
@@ -281,10 +376,7 @@ const UserDashboard = () => {
             <p className="text-sm text-blue-800/70 dark:text-blue-200/60 mb-6 leading-relaxed font-medium">
               Did you know? Saving your home and work routes allows BusMate to predict the best time to leave based on traffic history.
             </p>
-            <Button
-              onClick={() => navigate('/live')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all active:scale-95"
-            >
+            <Button onClick={() => navigate('/live')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-500/20 transition-all active:scale-95">
               Set Up Now
             </Button>
           </Card>
@@ -299,7 +391,6 @@ const UserDashboard = () => {
             <p className="text-gray-500 dark:text-gray-400 text-xs font-black uppercase tracking-widest">Help Center Gateway</p>
           </Card>
         </div>
-
       </div>
     </div>
   );

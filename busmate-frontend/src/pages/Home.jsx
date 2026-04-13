@@ -16,6 +16,7 @@ const Home = () => {
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const [locationStatus, setLocationStatus] = useState('loading');
   const [autocomplete, setAutocomplete] = useState(null);
+  const [routeSearchQuery, setRouteSearchQuery] = useState('');
   const navigate = useNavigate();
 
   const onLoad = (autocompleteInstance) => {
@@ -198,7 +199,9 @@ const Home = () => {
               <Autocomplete onLoad={onLoad} onPlaceChanged={onPlaceChanged} className="flex-grow relative z-10 w-full">
                 <InputField
                   icon={Search}
-                  placeholder="Enter destination node..."
+                  placeholder="Enter Route (e.g. 122) or Destination..."
+                  value={routeSearchQuery || ""}
+                  onChange={(e) => setRouteSearchQuery(e.target.value)}
                   className="w-full text-white bg-transparent border-none shadow-none font-bold placeholder:text-gray-600 placeholder:uppercase placeholder:tracking-widest py-3 px-6"
                 />
               </Autocomplete>
@@ -209,7 +212,16 @@ const Home = () => {
                 className="flex-grow text-white bg-transparent border-none shadow-none font-bold placeholder:text-gray-600 placeholder:uppercase placeholder:tracking-widest relative z-10 py-3 px-6"
               />
             )}
-            <Button className="w-full sm:w-auto px-10 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] tracking-[0.3em] rounded-2xl shadow-2xl shadow-blue-500/40 relative z-10 active:scale-95 transition-all">
+            <Button 
+              onClick={() => {
+                if (routeSearchQuery) {
+                  navigate(`/live?route=${encodeURIComponent(routeSearchQuery)}`);
+                } else {
+                  navigate('/live');
+                }
+              }}
+              className="w-full sm:w-auto px-10 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] tracking-[0.3em] rounded-2xl shadow-2xl shadow-blue-500/40 relative z-10 active:scale-95 transition-all"
+            >
               Launch Node
             </Button>
           </div>

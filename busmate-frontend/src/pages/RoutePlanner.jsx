@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { MapPin, Navigation, ArrowDownUp, Clock, Zap, ArrowRight, AlertTriangle, Bus, X, RotateCcw } from 'lucide-react';
 import { GoogleMap, Marker, useLoadScript, Polyline, OverlayView, Autocomplete, DirectionsRenderer } from "@react-google-maps/api";
 import Button from '../components/common/Button';
@@ -26,6 +26,7 @@ const RoutePlanner = () => {
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const [locationStatus, setLocationStatus] = useState('loading');
   const location = useLocation();
+  const navigate = useNavigate();
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
@@ -161,21 +162,18 @@ const RoutePlanner = () => {
     }
   };
 
-  // Check for destination passed from Home page
+  const initialCalculatedRef = useRef(false);
+
+  // Check for destination passed from Home page and handle initial calculation
   useEffect(() => {
-    if (location.state?.destination && isLoaded) {
+    if (location.state?.destination && userLocation && isLoaded && !initialCalculatedRef.current) {
       const { lat, lng, address } = location.state.destination;
       setDestination({ lat, lng });
       setDestAddress(address || "Selected Destination");
-    }
-  }, [location.state, isLoaded]);
-
-  // BUG FIX: Removed the `!directionsResponse` guard so re-searches always work
-  useEffect(() => {
-    if (location.state?.destination && userLocation && isLoaded) {
       calculateRoute();
       setMapState('results');
       setShowResults(true);
+      initialCalculatedRef.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userLocation, isLoaded, location.state]);
@@ -581,29 +579,29 @@ const RoutePlanner = () => {
               ) : transitSteps.length > 0 ? (
                 /* SMART FALLBACK: Map through every transit step (bus) required to complete the journey */
                 <div className="space-y-4">
-                  {/* IMPROVEMENT: Journey Summary Header for Google fallback results */}
-                  <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl px-4 py-3">
+                  {/* Journey Summary Header */}
+                  <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-2xl px-4 py-3">
                     <div className="text-center">
-                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Total Distance</p>
-                      <p className="text-sm font-black text-amber-700 dark:text-amber-300">{distance}</p>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Total Distance</p>
+                      <p className="text-sm font-black text-blue-700 dark:text-blue-300">{distance}</p>
                     </div>
-                    <div className="w-px h-8 bg-amber-200 dark:bg-amber-800" />
+                    <div className="w-px h-8 bg-blue-200 dark:bg-blue-700" />
                     <div className="text-center">
-                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Est. Duration</p>
-                      <p className="text-sm font-black text-amber-700 dark:text-amber-300">{duration}</p>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Est. Duration</p>
+                      <p className="text-sm font-black text-blue-700 dark:text-blue-300">{duration}</p>
                     </div>
-                    <div className="w-px h-8 bg-amber-200 dark:bg-amber-800" />
+                    <div className="w-px h-8 bg-blue-200 dark:bg-blue-700" />
                     <div className="text-center">
-                      <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Total Fare</p>
-                      <p className="text-sm font-black text-amber-700 dark:text-amber-300">Rs. {computeTotalFare(transitSteps)}</p>
+                      <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Total Fare</p>
+                      <p className="text-sm font-black text-blue-700 dark:text-blue-300">Rs. {computeTotalFare(transitSteps)}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
-                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <div className="flex items-center gap-2 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/30">
+                    <Bus className="w-5 h-5 text-blue-500 shrink-0" />
                     <div>
-                      <p className="text-xs font-bold text-amber-800 dark:text-amber-400">Routes outside live-tracking fleet</p>
-                      <p className="text-[10px] text-amber-700/70 dark:text-amber-400/70 mt-0.5">Google Maps suggests taking the following buses.</p>
+                      <p className="text-xs font-bold text-blue-800 dark:text-blue-300">Recommended Connections</p>
+                      <p className="text-[10px] text-blue-700/70 dark:text-blue-400/70 mt-0.5">Board each bus in sequence to complete your journey.</p>
                     </div>
                   </div>
 
@@ -611,12 +609,11 @@ const RoutePlanner = () => {
                     <Card
                       key={idx}
                       hover
-                      className="p-4 border-l-4 border-l-amber-500 animate-in fade-in duration-500"
-                      onClick={() => setMapState('results')}
+                      className="p-4 border-l-4 border-l-blue-500 animate-in fade-in duration-500"
                     >
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Step {idx + 1}</span>
+                          <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Leg {idx + 1}</span>
                           <span className="font-bold text-gray-900 dark:text-gray-50 text-xl">{step.duration?.text || "N/A"}</span>
                         </div>
                         <div className="text-right">
@@ -663,7 +660,35 @@ const RoutePlanner = () => {
                           <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {step.distance?.text || "N/A"}</span>
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Standard Timetable</span>
                         </div>
-                        <ArrowRight className="w-4 h-4 text-gray-300" />
+                        {(() => {
+                           const routeNumber = step.transit?.line?.short_name || step.transit?.line?.name;
+                           const isTrain = routeNumber?.toLowerCase().includes('train') || step.transit?.line?.vehicle?.type === 'TRAIN';
+                           if (routeNumber && !isTrain) {
+                             return (
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   const directionFilter = step.transit?.arrival_stop?.name;
+                                   const arrivalLoc = step.transit?.arrival_stop?.location;
+                                   navigate('/live', { 
+                                     state: { 
+                                       autoStartRoute: routeNumber, 
+                                       autoSetDirection: directionFilter,
+                                       autoSetArrivalLat: typeof arrivalLoc?.lat === 'function' ? arrivalLoc.lat() : arrivalLoc?.lat,
+                                       autoSetArrivalLng: typeof arrivalLoc?.lng === 'function' ? arrivalLoc.lng() : arrivalLoc?.lng,
+                                       autoStartNavigation: true 
+                                     } 
+                                   });
+                                 }}
+                                 className="bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] font-black shadow-lg shadow-blue-500/20 active:scale-95 transition-all text-[10px] uppercase tracking-widest"
+                               >
+                                 Track Bus
+                                 <ArrowRight className="w-3 h-3" />
+                               </button>
+                             )
+                           }
+                           return <ArrowRight className="w-4 h-4 text-gray-300" />;
+                        })()}
                       </div>
                     </Card>
                   ))}

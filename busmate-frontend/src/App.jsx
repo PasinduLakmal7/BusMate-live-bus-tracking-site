@@ -17,9 +17,9 @@ import CrowdStatus from "./pages/CrowdStatus";
 import HelpSupport from "./pages/HelpSupport";
 
 // Layouts
-import Layout from "../components/layout/Layout";
-import Login from "../components/auth/Login";
-import SignUp from "../components/auth/SignUp";
+import Layout from "./components/layout/Layout";
+import Login from "./components/auth/Login";
+import SignUp from "./components/auth/SignUp";
 
 const App = () => {
   return (

@@ -25,17 +25,17 @@ export default defineConfig({
     allowedHosts: true,
     cors: true,
     hmr: {
-      clientPort: 443,
+      overlay: true,
     },
     proxy: {
       '/socket.io': {
-        target: 'http://localhost:4000',
+        target: 'http://127.0.0.1:4000',
         ws: true,
         changeOrigin: true,
         secure: false,
       },
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://127.0.0.1:4000',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
@@ -49,14 +49,14 @@ export default defineConfig({
     cors: true,
     proxy: {
       '/socket.io': {
-        target: 'http://localhost:4000',
+        target: 'http://127.0.0.1:4000',
         ws: true,
         changeOrigin: true,
         secure: false,
         headers: { "ngrok-skip-browser-warning": "true" }
       },
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://127.0.0.1:4000',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ''),
