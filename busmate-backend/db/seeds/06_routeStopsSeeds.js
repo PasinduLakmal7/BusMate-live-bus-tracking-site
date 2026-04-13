@@ -33,7 +33,7 @@ exports.seed = async function (knex) {
     // Route 12 - EX-002 Kaduwela → Matara (Expressway)
     ["Kaduwela", "Makumbura", "Galle", "Matara"],
     // Route 13 - 255 Mount Lavinia → Kottawa
-    ["Mount Lavinia", "Katubedda", "Piliyandala", "Kottawa"],
+    ["Mount Lavinia", "University of Moratuwa", "Piliyandala", "Kottawa"],
     // Route 14 - 100 Panadura → Pettah (Galle Road)
     ["Panadura", "Aturugiriya Junction", "Moratuwa", "Katubedda", "Ratmalana", "Mount Lavinia", "Dehiwala", "Wellawatte", "Bambalapitiya", "Kollupitiya", "Pettah"],
     // Route 15 - 101 Moratuwa → Pettah
@@ -138,7 +138,9 @@ exports.seed = async function (knex) {
     "Puttalam":             { lat: 8.033,  lng: 79.825 },
     "Makumbura":            { lat: 6.841,  lng: 79.993 },
     "Kottawa":              { lat: 6.841,  lng: 79.965 },
-    "Katubedda":            { lat: 6.801,  lng: 79.891 },
+    "Katubedda Junction":   { lat: 6.791,  lng: 79.882 },
+    "Katubedda":            { lat: 6.79664167, lng: 79.88831674 },
+    "University of Moratuwa": { lat: 6.795432567476653, lng: 79.89978923255364 },
     "Piliyandala":          { lat: 6.801,  lng: 79.922 },
     "Moratuwa":             { lat: 6.774,  lng: 79.882 },
     "Mount Lavinia":        { lat: 6.836,  lng: 79.866 },

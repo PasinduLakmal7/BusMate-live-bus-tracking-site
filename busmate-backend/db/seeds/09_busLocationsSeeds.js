@@ -72,7 +72,28 @@ exports.seed = async function (knex) {
     // Assign each bus to a zone in order
     let zoneIndex = 0;
     let zoneCount = 0;
+    
+    // Coordinates for specific request
+    const katubeddaJunction = { lat: 6.791, lng: 79.882 };
+    const piliyandala = { lat: 6.801, lng: 79.922 };
+    let route13Count = 0;
+
     busesWithRoutes.forEach((bus) => {
+      // SPECIAL CASE: Force Route 13 (Bus 255) to specific locations
+      if (String(bus.route_id) === '13') {
+        const dest = route13Count === 0 ? katubeddaJunction : piliyandala;
+        locations.push({
+          bus_id: bus.bus_id,
+          latitude: dest.lat,
+          longitude: dest.lng,
+          speed: 15,
+          recorded_at: new Date(),
+          heading: route13Count === 0 ? 90 : 270 // Different headings for variety
+        });
+        route13Count++;
+        return;
+      }
+
       const zone = zones[zoneIndex];
       const lat = zone.lat + (Math.random() - 0.5) * zone.spread;
       const lng = zone.lng + (Math.random() - 0.5) * zone.spread;
