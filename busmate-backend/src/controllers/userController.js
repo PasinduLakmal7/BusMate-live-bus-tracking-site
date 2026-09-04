@@ -1,4 +1,4 @@
-const Users = require('../../db/models/usersModel.js');
+const pool = require('../../db.js');
 
 /**
  * Get user profile data
@@ -13,7 +13,8 @@ exports.getProfile = async (req, res) => {
       return res.status(200).json({ success: false, guest: true, message: 'Guest session' });
     }
 
-    const user = await Users.query().findById(userId);
+    const result = await pool.query('SELECT id, username, email FROM users WHERE id = $1', [userId]);
+    const user = result.rows[0];
     
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });

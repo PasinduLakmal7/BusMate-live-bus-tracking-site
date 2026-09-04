@@ -1,12 +1,13 @@
 const bcrypt = require("bcrypt");
-const Users = require("../../db/models/usersModel.js");
+const pool = require("../../db.js");
 
 const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Identify Operand
-    const user = await Users.query().where("email", email).first();
+    // 1. Identify User
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const user = result.rows[0];
 
     if (!user) {
       return res.status(401).json({ success: false, error: "Authentication Failure: Invalid Credentials" });

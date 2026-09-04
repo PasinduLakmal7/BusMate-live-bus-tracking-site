@@ -53,7 +53,6 @@ const Home = () => {
 
   const handleEnableLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
       return;
     }
 
@@ -68,15 +67,14 @@ const Home = () => {
           setLocationStatus(highAccuracy ? 'high' : 'low');
         },
         (error) => {
-          console.error(`Error getting location (highAccuracy=${highAccuracy}):`, error);
+          console.warn(`Geolocation error (highAccuracy=${highAccuracy}):`, error);
           if (highAccuracy && (error.code === 3 || error.code === 1)) {
             startTracking(false);
           } else {
             setLocationStatus('error');
-            alert("Please enable location permissions in your browser to use this feature.");
           }
         },
-        { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 5000 : 15000, maximumAge: 0 }
+        { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 4000 : 10000, maximumAge: 60000 }
       );
     };
 

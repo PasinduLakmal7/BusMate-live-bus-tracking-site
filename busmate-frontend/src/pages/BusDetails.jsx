@@ -115,6 +115,36 @@ const BusDetails = () => {
       const data = await res.json();
       if (data.success) {
         setBusData(data.bus);
+      } else if (id.startsWith('D-')) {
+        // Fallback for ad-hoc driver tracking sessions (Mobile App)
+        let dName = 'Unregistered Vehicle';
+        try {
+           const dRes = await fetch(`/api/drivers/all`);
+           const dData = await dRes.json();
+           const driver = dData.data?.find(d => String(d.driver_id) === String(id.replace('D-', '')));
+           if (driver) dName = `Driver: ${driver.full_name}`;
+        } catch (e) {
+           console.error("Failed to fetch drivers for fallback", e);
+        }
+
+        let lastLocation = undefined;
+        try {
+           const locRes = await fetch(`/api/buses/locations`);
+           const locData = await locRes.json();
+           const matchLoc = locData.locations?.find(l => String(l.id) === String(id) || String(l.driverId) === String(id.replace('D-', '')));
+           if (matchLoc) {
+               lastLocation = { lat: matchLoc.lat, lon: matchLoc.lon, speed: matchLoc.speed, heading: matchLoc.heading, recorded_at: matchLoc.ts };
+           }
+        } catch(e) { console.error(e); }
+
+        setBusData({
+          id: id,
+          busNumber: dName,
+          driverId: id.replace('D-', ''),
+          route: { routeNumber: 'Live Tracking', start: 'Ad-hoc', end: 'Tracking' },
+          upcomingStops: [],
+          location: lastLocation
+        });
       }
     } catch (err) {
       console.error("Error fetching bus details:", err);
@@ -146,7 +176,11 @@ const BusDetails = () => {
     // Socket Sync logic
     const socket = io('http://localhost:4000', { auth: { admin: true } });
     socket.on('bus:location', (data) => {
-       if (data.busId === id || String(data.id) === String(busData?.id)) {
+       const isMatch = data.busId === id || 
+                       String(data.id) === String(busData?.id) || 
+                       (String(id).startsWith('D-') && String(data.driverId) === String(id).replace('D-', ''));
+
+       if (isMatch) {
           setBusData(prev => {
              if (!prev) return prev;
              return { 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Map as MapIcon, Map, Filter, Layers, Crosshair, Bus, X, Users, Zap, Clock, ChevronRight, Star, AlertTriangle, Footprints, ArrowDownUp } from 'lucide-react';
+import { Map as MapIcon, Filter, Layers, Crosshair, Bus, X, Users, Zap, Clock, ChevronRight, Star, AlertTriangle, Footprints, ArrowDownUp } from 'lucide-react';
 import { GoogleMap, Marker, useLoadScript, InfoWindow, Autocomplete, Polyline, OverlayViewF, DirectionsRenderer, OverlayView } from "@react-google-maps/api";
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import io from "socket.io-client";
 import Button from '../components/common/Button';
 import busIcon from '../assets/bus-icon.png';
@@ -48,46 +48,55 @@ const darkMapStyles = [
 
 // ── Smooth Animation Marker Component (Precision 360° Rotation Version) ──
 const SmoothMarker = ({ bus, onClick }) => {
-  const [pos, setPos] = useState({ lat: bus.lat, lng: bus.lon });
+  const [pos, setPos] = useState({ lat: parseFloat(bus.lat), lng: parseFloat(bus.lon) });
   const [heading, setHeading] = useState(parseFloat(bus.heading) || 0);
   const [isHovered, setIsHovered] = useState(false);
+  const currentPosRef = useRef({ lat: parseFloat(bus.lat), lng: parseFloat(bus.lon) });
+  const animRef = useRef(null);
 
   useEffect(() => {
-    // Reset hover whenever the bus moves to a new GPS position
-    setIsHovered(false);
+    const targetLat = parseFloat(bus.lat);
+    const targetLng = parseFloat(bus.lon);
+    if (isNaN(targetLat) || isNaN(targetLng)) return;
 
-    let start = null;
-    let animationFrameId;
-    // MATCH TELEMETRY SYNC: 5 seconds update cycle
-    const duration = 5000;
-    const initialPos = { ...pos };
-    const targetPos = { lat: bus.lat, lng: bus.lon };
+    const startLat = currentPosRef.current.lat;
+    const startLng = currentPosRef.current.lng;
 
-    const animate = (timestamp) => {
-      if (!start) start = timestamp;
-      const progress = Math.min((timestamp - start) / duration, 1);
-      const nextLat = initialPos.lat + (targetPos.lat - initialPos.lat) * progress;
-      const nextLng = initialPos.lng + (targetPos.lng - initialPos.lng) * progress;
-      setPos({ lat: nextLat, lng: nextLng });
-      if (progress < 1) animationFrameId = requestAnimationFrame(animate);
-    };
+    const diffLat = Math.abs(targetLat - startLat);
+    const diffLng = Math.abs(targetLng - startLng);
 
-    const diffLat = Math.abs(parseFloat(targetPos.lat) - parseFloat(initialPos.lat));
-    const diffLng = Math.abs(parseFloat(targetPos.lng) - parseFloat(initialPos.lng));
-
-    // Update heading only if movement is significant
     if (diffLat > 0.000001 || diffLng > 0.000001) {
-      const dy = parseFloat(targetPos.lat) - parseFloat(initialPos.lat);
-      const dx = parseFloat(targetPos.lng) - parseFloat(initialPos.lng);
-      // Determine rotation from North (0 degrees)
+      const dy = targetLat - startLat;
+      const dx = targetLng - startLng;
       const newHeading = (Math.atan2(dx, dy) * 180) / Math.PI;
       setHeading(newHeading);
-      animationFrameId = requestAnimationFrame(animate);
+
+      let startTime = null;
+      const duration = 2500;
+
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+
+      const animate = (timestamp) => {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        const curLat = startLat + (targetLat - startLat) * progress;
+        const curLng = startLng + (targetLng - startLng) * progress;
+        currentPosRef.current = { lat: curLat, lng: curLng };
+        setPos({ lat: curLat, lng: curLng });
+
+        if (progress < 1) {
+          animRef.current = requestAnimationFrame(animate);
+        }
+      };
+
+      animRef.current = requestAnimationFrame(animate);
     } else {
-      setPos(targetPos);
+      currentPosRef.current = { lat: targetLat, lng: targetLng };
     }
 
-    return () => { if (animationFrameId) cancelAnimationFrame(animationFrameId); };
+    return () => {
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
   }, [bus.lat, bus.lon]);
 
   const occupancyColor = bus.occupancy < 40 ? 'bg-emerald-500' : bus.occupancy < 80 ? 'bg-amber-500' : 'bg-rose-500';
@@ -157,6 +166,7 @@ const LiveTracking = () => {
     return allRoutes.find(r => String(r.routeNumber) === String(selectedRoute));
   }, [allRoutes, selectedRoute]);
   const [selectedBus, setSelectedBus] = useState(null);
+  const autoSelectBusRef = useRef(false);
   const [selectedStop, setSelectedStop] = useState(null);
   const [map, setMap] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
@@ -170,6 +180,13 @@ const LiveTracking = () => {
   const [navigationInfo, setNavigationInfo] = useState({ distance: '', duration: '', instruction: '' });
   const [catchStatus, setCatchStatus] = useState({ status: 'analyzing', busETA: null, walkETA: null, busNumber: '' });
   const [routeSearchQuery, setRouteSearchQuery] = useState('');
+  
+  // Custom navigation parameters from Route Planner
+  const [navOriginLat, setNavOriginLat] = useState(null);
+  const [navOriginLng, setNavOriginLng] = useState(null);
+  const [navArrivalLat, setNavArrivalLat] = useState(null);
+  const [navArrivalLng, setNavArrivalLng] = useState(null);
+  const [navDirection, setNavDirection] = useState(null);
   const [stopSearchQuery, setStopSearchQuery] = useState('');
   const [isRouteDropdownOpen, setIsRouteDropdownOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('All');
@@ -204,7 +221,15 @@ const LiveTracking = () => {
       if (location.state.autoStartNavigation) {
         // Small delay to allow route to settle and directions service to pick up nearest stop before expanding UI
         setTimeout(() => setIsNavigating(true), 800);
+        autoSelectBusRef.current = true;
       }
+      
+      // Capture custom routing coordinates if provided
+      if (location.state.autoSetOriginLat !== undefined) setNavOriginLat(location.state.autoSetOriginLat);
+      if (location.state.autoSetOriginLng !== undefined) setNavOriginLng(location.state.autoSetOriginLng);
+      if (location.state.autoSetArrivalLat !== undefined) setNavArrivalLat(location.state.autoSetArrivalLat);
+      if (location.state.autoSetArrivalLng !== undefined) setNavArrivalLng(location.state.autoSetArrivalLng);
+      if (location.state.autoSetDirection !== undefined) setNavDirection(location.state.autoSetDirection);
 
       // Clean up the state so it doesn't re-trigger on refresh safely
       navigate(location.pathname, { replace: true, state: {} });
@@ -239,7 +264,7 @@ const LiveTracking = () => {
           fetch(`${API_URL}/site/stops`).catch(e => ({ status: 'fetch_error', ok: false })),
           fetch(`${API_URL}/site/routes`).catch(e => ({ status: 'fetch_error', ok: false })),
           fetch(`${API_URL}/site/buses`).catch(e => ({ status: 'fetch_error', ok: false })),
-          fetch(`/api/drivers/all`).catch(e => ({ status: 'fetch_error', ok: false }))
+          fetch(`${API_URL}/drivers/all`).catch(e => ({ status: 'fetch_error', ok: false }))
         ]);
 
         if (stopsRes.status === 500) setDebugLogs(prev => [...prev.slice(-4), "ERR: Stops 500"]);
@@ -294,13 +319,39 @@ const LiveTracking = () => {
         const locationsRes = await fetch(`${API_URL}/buses/locations`);
         const locationsData = await locationsRes.json();
         if (locationsData.success && locationsData.locations) {
-          setNearbyBuses(locationsData.locations.map(loc => ({
-            ...loc,
-            lat: parseFloat(loc.lat),
-            lon: parseFloat(loc.lon),
-            speed: parseFloat(loc.speed || 0),
-            distance: 0
-          })));
+          setNearbyBuses(prev => {
+            const incomingMap = new window.Map();
+            locationsData.locations.forEach(loc => {
+              incomingMap.set(loc.busId || loc.id, {
+                ...loc,
+                lat: parseFloat(loc.lat),
+                lon: parseFloat(loc.lon),
+                speed: parseFloat(loc.speed || 0),
+                heading: parseFloat(loc.heading || 0),
+                distance: 0
+              });
+            });
+
+            // Merge with previous state to avoid UI flicker
+            if (prev.length === 0) {
+              return Array.from(incomingMap.values()).map(b => ({ ...b, lastUpdate: Date.now() }));
+            }
+            
+            const now = Date.now();
+            const updated = prev.map(bus => {
+              const key = bus.busId || bus.id;
+              if (incomingMap.has(key)) {
+                const fresh = incomingMap.get(key);
+                incomingMap.delete(key);
+                return { ...bus, ...fresh, lastUpdate: now };
+              }
+              return bus;
+            });
+
+            // Add any newly discovered buses
+            incomingMap.forEach(newBus => updated.push({ ...newBus, lastUpdate: now }));
+            return updated;
+          });
         }
       } catch (err) {
         console.error("Live fetch failure:", err);
@@ -309,6 +360,10 @@ const LiveTracking = () => {
 
     fetchStaticData();
     fetchLiveLocations();
+
+    // ── Continuous 2.5-second Polling Fallback (Guarantees Smooth Live Tracking) ──
+    const liveInterval = setInterval(fetchLiveLocations, 2500);
+    return () => clearInterval(liveInterval);
   }, [API_URL]);
 
   const lastFetchedRouteRef = useRef(null);
@@ -327,7 +382,8 @@ const LiveTracking = () => {
 
     const fetchRoutePath = async () => {
       try {
-        const route = allRoutes.find(r => String(r.routeNumber) === String(selectedRoute));
+        const routeNum = String(selectedRoute);
+        const route = allRoutes.find(r => String(r.routeNumber) === routeNum || String(r.route_number) === routeNum);
         if (!route) {
           console.warn(`[RoutePath] Route ${selectedRoute} metadata not found in allRoutes.`);
           return;
@@ -335,13 +391,12 @@ const LiveTracking = () => {
 
         lastFetchedRouteRef.current = selectedRoute;
 
-        const routeNum = String(selectedRoute);
         const sortedRouteStops = allStopsRaw
-          .filter(s =>
-            String(s.route) === routeNum ||
-            String(s.routeNumber) === routeNum ||
-            String(s.route_id) === String(route.id)
-          )
+          .filter(s => {
+            const matchRoute = String(s.route) === routeNum || String(s.routeNumber) === routeNum;
+            const matchId = route?.id && String(s.route_id) === String(route.id);
+            return matchRoute || matchId;
+          })
           .sort((a, b) => (parseInt(a.order) || 0) - (parseInt(b.order) || 0))
           .slice(0, 23);
 
@@ -421,18 +476,25 @@ const LiveTracking = () => {
     return () => { ignore = true; };
   }, [selectedRoute, allRoutes, allStopsRaw, isLoaded]);
 
-  // Nearest bus stop on the selected route to the user's location (must be before walking useEffect)
-  const nearestStopOnRoute = useMemo(() => {
-    if (!userLocation || selectedRoute === 'All' || !allRoutes.length) return null;
+  // The starting origin point (either the custom searched location from Route Planner, or the live GPS location)
+  const computedOrigin = useMemo(() => {
+    return (navOriginLat !== null && navOriginLng !== null && !isNaN(navOriginLat) && !isNaN(navOriginLng))
+      ? { lat: parseFloat(navOriginLat), lng: parseFloat(navOriginLng) }
+      : userLocation;
+  }, [navOriginLat, navOriginLng, userLocation]);
 
-    const currentRouteObj = allRoutes.find(r => String(r.routeNumber) === String(selectedRoute));
+  // Nearest bus stop on the selected route to the origin (must be before walking useEffect)
+  const nearestStopOnRoute = useMemo(() => {
+    if (!computedOrigin || selectedRoute === 'All' || !allRoutes.length) return null;
+
+    const currentRouteObj = allRoutes.find(r => String(r.routeNumber) === String(selectedRoute) || String(r.route_number) === String(selectedRoute));
 
     // Use allStopsRaw for more robust filtering including route_id
-    const stopsOnRoute = allStopsRaw.filter(s =>
-      String(s.route) === String(selectedRoute) ||
-      String(s.routeNumber) === String(selectedRoute) ||
-      String(s.route_id) === String(currentRouteObj?.id)
-    );
+    const stopsOnRoute = allStopsRaw.filter(s => {
+      const matchRoute = String(s.route) === String(selectedRoute) || String(s.routeNumber) === String(selectedRoute);
+      const matchId = currentRouteObj?.id && String(s.route_id) === String(currentRouteObj.id);
+      return matchRoute || matchId;
+    });
 
     if (stopsOnRoute.length === 0) return null;
 
@@ -444,7 +506,7 @@ const LiveTracking = () => {
       const stopLng = parseFloat(stop.lng || stop.longitude);
       if (isNaN(stopLat) || isNaN(stopLng)) return;
 
-      const d = calculateDistance(userLocation.lat, userLocation.lng, stopLat, stopLng);
+      const d = calculateDistance(computedOrigin.lat, computedOrigin.lng, stopLat, stopLng);
       if (d < minDist) {
         minDist = d;
         nearest = {
@@ -462,21 +524,21 @@ const LiveTracking = () => {
   // Transfer stop (Alighting Stop) identification for multi-leg journeys
   const transferStop = useMemo(() => {
     // Priority 1: Check if we have coordinate coordinates passed directly (Most Reliable)
-    const latVal = parseFloat(location.state?.autoSetArrivalLat);
-    const lngVal = parseFloat(location.state?.autoSetArrivalLng);
+    const latVal = parseFloat(navArrivalLat);
+    const lngVal = parseFloat(navArrivalLng);
 
     if (!isNaN(latVal) && !isNaN(lngVal)) {
       return {
         lat: latVal,
         lng: lngVal,
-        name: location.state.autoSetDirection || "Your Stop"
+        name: navDirection || "Your Stop"
       };
     }
 
     if (!allStopsRaw.length) return null;
 
     // Fallback: Name-based matching (for manual route selection if needed)
-    const rawTarget = location.state?.autoSetDirection || navigationInfo.arrivalStop;
+    const rawTarget = navDirection || navigationInfo.arrivalStop;
     if (!rawTarget) return null;
 
     const normalize = (str) => {
@@ -508,11 +570,11 @@ const LiveTracking = () => {
       lng: finalLng,
       name: stop.stop_name || stop.name
     };
-  }, [location.state, navigationInfo.arrivalStop, allStopsRaw]);
+  }, [navArrivalLat, navArrivalLng, navDirection, navigationInfo.arrivalStop, allStopsRaw]);
 
-  // Walking directions: user location → nearest stop on selected route (actual road path)
+  // Walking directions: origin → nearest stop on selected route (actual road path)
   useEffect(() => {
-    if (!isLoaded || !userLocation || !nearestStopOnRoute) {
+    if (!isLoaded || !computedOrigin || !nearestStopOnRoute) {
       setWalkingDirections(null);
       return;
     }
@@ -520,7 +582,7 @@ const LiveTracking = () => {
     const directionsService = new window.google.maps.DirectionsService();
     directionsService.route(
       {
-        origin: userLocation,
+        origin: computedOrigin,
         destination: { lat: nearestStopOnRoute.lat, lng: nearestStopOnRoute.lng },
         travelMode: window.google.maps.TravelMode.WALKING,
       },
@@ -539,26 +601,24 @@ const LiveTracking = () => {
   useEffect(() => {
     if (walkingDirections && walkingDirections.routes[0]) {
       const leg = walkingDirections.routes[0].legs[0];
-      setNavigationInfo({
-        distance: leg.distance.text,
-        duration: leg.duration.text,
-        instruction: leg.steps[0].instructions.replace(/<[^>]*>?/gm, '') // Strip HTML tags
+      const newDist = leg.distance.text;
+      const newDur = leg.duration.text;
+      const newInst = leg.steps[0].instructions.replace(/<[^>]*>?/gm, '');
+      setNavigationInfo(prev => {
+        if (prev.distance === newDist && prev.duration === newDur && prev.instruction === newInst) return prev;
+        return { ...prev, distance: newDist, duration: newDur, instruction: newInst };
       });
-    } else if (isNavigating) {
-      // If we're already navigating but directions are temporarily missing, 
-      // don't kill the session, just wait for the update.
-      // setIsNavigating(false); // REMOVED THIS LINE
     }
   }, [walkingDirections]);
 
   // Auto-center camera during navigation mode
   useEffect(() => {
-    if (isNavigating && map && userLocation) {
-      map.panTo(userLocation);
+    if (isNavigating && map && computedOrigin) {
+      map.panTo(computedOrigin);
       // Ensure tilt is active for 2.5D look
       map.setTilt(45);
     }
-  }, [isNavigating, userLocation, map]);
+  }, [isNavigating, computedOrigin, map]);
 
 
   // Fetch User Location
@@ -616,7 +676,8 @@ const LiveTracking = () => {
             destination: data.destination || existing.destination,
             isReturning: data.isReturning !== undefined ? data.isReturning : existing.isReturning,
             is_returning: data.isReturning !== undefined ? data.isReturning : existing.is_returning,
-            busId: data.busId || data.bus_number || existing.busId
+            busId: data.busId || data.bus_number || existing.busId,
+            lastUpdate: Date.now()
           };
           return newBuses;
         }
@@ -626,12 +687,26 @@ const LiveTracking = () => {
           lat: parseFloat(data.lat),
           lon: parseFloat(data.lon),
           speed: parseFloat(data.speed || 0),
-          busId: data.busId || data.bus_number || (data.driverId ? `D-${data.driverId}` : data.id)
+          busId: data.busId || data.bus_number || (data.driverId ? `D-${data.driverId}` : data.id),
+          lastUpdate: Date.now()
         }];
       });
     });
 
     return () => socket.disconnect();
+  }, []);
+
+  // Cleanup stale buses (e.g. if driver stops location sharing)
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      setNearbyBuses(prev => {
+        const now = Date.now();
+        // Remove buses that haven't sent an update in the last 12 seconds
+        const filtered = prev.filter(b => !b.lastUpdate || (now - b.lastUpdate < 12000));
+        return filtered.length === prev.length ? prev : filtered;
+      });
+    }, 5000);
+    return () => clearInterval(cleanupInterval);
   }, []);
 
   const mapContainerStyle = useMemo(() => ({ width: '100%', height: '100%' }), []);
@@ -699,20 +774,26 @@ const LiveTracking = () => {
       );
 
       // 2. CROSS-ENTITY FALLBACK: If not found in busesMeta, try to resolve via Driver registry
-      if (!meta && (enrichedBus.driverId || enrichedBus.driver_id)) {
-        const dID = enrichedBus.driverId || enrichedBus.driver_id;
-        const driver = driversMeta.find(d => String(d.driver_id) === String(dID) || String(d.id) === String(dID));
-        if (driver && driver.bus_id) {
-          meta = busesMeta.find(m => String(m.id) === String(driver.bus_id));
+      if (!meta) {
+        const possibleDriverId = enrichedBus.driverId || enrichedBus.driver_id || 
+                               (String(enrichedBus.busId || '').startsWith('D-') ? String(enrichedBus.busId).replace('D-', '') : null);
+        
+        if (possibleDriverId) {
+          const driver = driversMeta.find(d => String(d.driver_id) === String(possibleDriverId) || String(d.id) === String(possibleDriverId));
+          if (driver && driver.bus_id) {
+            meta = busesMeta.find(m => String(m.id) === String(driver.bus_id) || String(m.bus_id) === String(driver.bus_id));
+          }
         }
       }
 
       if (meta) {
-        enrichedBus.busId = enrichedBus.busId && !enrichedBus.busId.startsWith('D-') ? enrichedBus.busId : (meta.bus_number || meta.license_plate);
+        enrichedBus.busId = enrichedBus.busId && !String(enrichedBus.busId).startsWith('D-') ? enrichedBus.busId : (meta.bus_number || meta.license_plate);
         enrichedBus.routeId = enrichedBus.routeId || meta.route_id;
         enrichedBus.routeNumber = enrichedBus.routeNumber || meta.route_number;
         enrichedBus.destination = enrichedBus.destination || meta.destination || meta.end_location;
-        enrichedBus.id = enrichedBus.id || meta.id;
+        enrichedBus.id = enrichedBus.id || meta.id || meta.bus_id;
+        enrichedBus.bus_number = meta.bus_number;
+        enrichedBus.license_plate = meta.license_plate;
       }
 
       // 3. Resolve route details from allRoutes
@@ -754,7 +835,9 @@ const LiveTracking = () => {
   useEffect(() => {
     if (!isNavigating || !selectedRoute || selectedRoute === 'All' || !nearestStopOnRoute || !nearbyBuses.length || !navigationInfo.duration) {
       // Only reset if totally not navigating or missing essential info
-      if (!isNavigating) setCatchStatus({ status: 'analyzing', busETA: null, walkETA: null, busNumber: '' });
+      if (!isNavigating) {
+        setCatchStatus(prev => prev.status === 'analyzing' && prev.busETA === null ? prev : { status: 'analyzing', busETA: null, walkETA: null, busNumber: '' });
+      }
       return;
     }
 
@@ -829,11 +912,11 @@ const LiveTracking = () => {
       else if (diff < 2) status = 'Hurry Up!';
       else status = 'Safe to Catch';
 
-      setCatchStatus({
-        status,
-        busETA: Math.ceil(minBusETA),
-        walkETA: walkTimeMin,
-        busNumber: bestBus.busId || bestBus.bus_number || 'Bus'
+      setCatchStatus(prev => {
+        const newBusETA = Math.ceil(minBusETA);
+        const newBusNumber = bestBus.busId || bestBus.bus_number || 'Bus';
+        if (prev.status === status && prev.busETA === newBusETA && prev.walkETA === walkTimeMin && prev.busNumber === newBusNumber) return prev;
+        return { status, busETA: newBusETA, walkETA: walkTimeMin, busNumber: newBusNumber };
       });
     } else {
       // Differentiate why we have no bus
@@ -841,18 +924,49 @@ const LiveTracking = () => {
         ? 'Passed Your Stop'
         : 'Waiting for Bus...';
 
-      setCatchStatus({ status: statusText, busETA: null, walkETA: walkTimeMin, busNumber: '' });
+      setCatchStatus(prev => {
+        if (prev.status === statusText && prev.busETA === null && prev.walkETA === walkTimeMin && prev.busNumber === '') return prev;
+        return { status: statusText, busETA: null, walkETA: walkTimeMin, busNumber: '' };
+      });
     }
   }, [isNavigating, selectedRoute, nearestStopOnRoute, nearbyBuses, navigationInfo.duration, filteredBuses]);
 
   const handleRecenter = () => {
-    if (map && userLocation) {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const freshPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setUserLocation(freshPos);
+          if (map) {
+            map.panTo(freshPos);
+            map.setZoom(15);
+          }
+        },
+        () => {
+          if (map && userLocation) {
+            map.panTo(userLocation);
+            map.setZoom(15);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    } else if (map && userLocation) {
       map.panTo(userLocation);
-      map.setZoom(13);
+      map.setZoom(15);
     }
   };
 
 
+
+  // Auto-select a bus when auto-navigating from Route Planner
+  useEffect(() => {
+    if (autoSelectBusRef.current && isNavigating && filteredBuses.length > 0) {
+      autoSelectBusRef.current = false;
+      // Auto-select the bus closest to the user's origin, or just the first one if we can't determine
+      const busToSelect = navigationInfo?.bestBus || filteredBuses[0];
+      setSelectedBus(busToSelect);
+    }
+  }, [isNavigating, filteredBuses, navigationInfo?.bestBus]);
 
   // Filter routes for the searchable dropdown
   const filteredRoutesDropdown = useMemo(() => {
@@ -882,7 +996,7 @@ const LiveTracking = () => {
 
       {/* ── MODERN NAVIGATION OVERLAY (Floating Dynamic Mode) ── */}
       {isNavigating && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-lg z-[100] animate-in slide-in-from-top duration-500">
+        <div className="absolute left-1/2 -translate-x-1/2 w-[95%] max-w-lg z-[100] animate-in slide-in-from-top duration-500" style={{ top: '160px' }}>
           <div className={`backdrop-blur-xl p-5 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/20 transition-all duration-700 ${catchStatus.status === 'Safe to Catch' ? 'bg-emerald-600/90 dark:bg-emerald-500/90' :
             catchStatus.status === 'Hurry Up!' ? 'bg-amber-500/90 dark:bg-amber-400/90' :
               catchStatus.status === 'Potential Miss' ? 'bg-rose-600/90 dark:bg-rose-500/90' :
@@ -1071,6 +1185,26 @@ const LiveTracking = () => {
               </OverlayViewF>
             )}
 
+            {/* Custom Origin Marker (If the route was started from a specific searched location rather than live GPS) */}
+            {navOriginLat !== null && navOriginLng !== null && !isNaN(parseFloat(navOriginLat)) && (
+              <OverlayViewF
+                position={{ lat: parseFloat(navOriginLat), lng: parseFloat(navOriginLng) }}
+                mapPaneName="overlayMouseTarget"
+                getPixelPositionOffset={() => ({ x: -16, y: -32 })}
+              >
+                <div className="relative flex flex-col items-center group cursor-pointer animate-in fade-in zoom-in duration-500 z-[150]">
+                  <div className="mb-2 px-3 py-1 bg-gray-900/90 backdrop-blur-md rounded-xl border border-white/20 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[9px] font-black text-white uppercase tracking-wider whitespace-nowrap">Origin</span>
+                  </div>
+                  <div className="relative w-8 h-8 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-gray-500/20 rounded-full animate-ping" />
+                    <div className="w-4 h-4 bg-gray-800 rounded-full border-[3px] border-white shadow-2xl relative z-10" />
+                    <div className="absolute -bottom-1 w-1 h-2 bg-gray-800 rounded-full" />
+                  </div>
+                </div>
+              </OverlayViewF>
+            )}
+
             {/* Route Path (Blue) - Precise road-snapped Google path */}
             {directionsResponse && selectedRoute !== "All" && (
               <DirectionsRenderer
@@ -1171,28 +1305,7 @@ const LiveTracking = () => {
                 );
               })}
 
-            {/* Special Demo Marker: Katubedda Junction (Elite "Get back" Point) */}
-            <OverlayViewF
-              position={{ lat: 6.799325804010394, lng: 79.88839634948542 }}
-              mapPaneName="floatPane"
-              getPixelPositionOffset={() => ({ x: -60, y: -60 })}
-            >
-              <div className="relative flex flex-col items-center group cursor-pointer animate-in fade-in zoom-in duration-500 z-[1000]">
-                {/* Modern "Get back" Label: Glassmorphism Elite */}
-                <div className="mb-3 px-4 py-2 bg-blue-600/90 backdrop-blur-md rounded-2xl border border-white/30 shadow-[0_8px_32px_rgba(37,99,235,0.4)] flex items-center gap-2 group-hover:scale-105 transition-transform duration-300">
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_8px_white]" />
-                  <span className="text-[11px] font-black text-white uppercase tracking-[0.2em] whitespace-nowrap">Get back</span>
-                </div>
 
-                {/* Modern Pin Point */}
-                <div className="relative w-10 h-10 flex items-center justify-center">
-                  <div className="absolute inset-0 bg-blue-500/20 rounded-full animate-ping duration-[3s]" />
-                  <div className="w-5 h-5 bg-blue-600 rounded-full border-[3px] border-white shadow-2xl relative z-10" />
-                  {/* Tail */}
-                  <div className="absolute -bottom-1 w-1 h-3 bg-blue-600 rounded-full blur-[1px]" />
-                </div>
-              </div>
-            </OverlayViewF>
             {/* Premium Bus Info Popup using OverlayView for full styling control */}
             {selectedBus && (
               <OverlayViewF
@@ -1200,18 +1313,23 @@ const LiveTracking = () => {
                 mapPaneName={"floatPane"}
                 getPixelPositionOffset={(width, height) => ({ x: -(width / 2), y: -(height + 80) })}
               >
-                <div className="animate-in fade-in zoom-in-95 duration-200 cursor-default select-none group pointer-events-auto">
+                <div 
+                  className="animate-in fade-in zoom-in-95 duration-200 cursor-default select-none group pointer-events-auto"
+                  onClick={e => e.stopPropagation()}
+                  onPointerDown={e => e.stopPropagation()}
+                  onPointerUp={e => e.stopPropagation()}
+                  onTouchStart={e => e.stopPropagation()}
+                  onTouchEnd={e => e.stopPropagation()}
+                >
                   {/* The Popup Container */}
                   <div className="relative w-[280px] bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-[28px] shadow-2xl border border-white/20 dark:border-gray-800 p-5 pt-6 shadow-blue-500/10">
 
                     {/* Close Button - Optimized for Touch */}
                     <button
-                      onClick={(e) => {
-                        e.preventDefault();
+                      onPointerDown={(e) => {
                         e.stopPropagation();
                         setSelectedBus(null);
                       }}
-                      onMouseDown={(e) => e.stopPropagation()}
                       className="absolute -top-2 -right-2 p-3 rounded-full bg-white dark:bg-gray-800 text-gray-400 hover:text-red-500 transition-all shadow-xl border border-gray-100 dark:border-gray-700 z-50 group active:scale-90"
                       title="Close"
                     >
@@ -1222,15 +1340,15 @@ const LiveTracking = () => {
                     <div className="flex justify-between items-start mb-5 pr-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1.5">
-                          <span className="bg-blue-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-lg uppercase tracking-wider">
-                            Route {selectedBus.routeNumber || selectedBus.route_number || '--'}
+                          <span className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider rounded border border-blue-500">
+                            {selectedBus.routeNumber || selectedBus.route_number ? `ROUTE ${selectedBus.routeNumber || selectedBus.route_number}` : 'ROUTE --'}
                           </span>
-                          <span className="text-gray-400 dark:text-gray-500 text-[10px] items-center font-bold uppercase tracking-widest flex gap-1">
-                            {selectedBus.busId || selectedBus.busCode || 'Vehicle'}
+                          <span className="text-gray-400 font-bold text-[10px] tracking-wider uppercase">
+                            {selectedBus.bus_number || selectedBus.license_plate || (driversMeta.find(d => String(d.driver_id) === String(selectedBus.id)?.replace('D-','') || String(d.driver_id) === String(selectedBus.driverId))?.full_name ? `Driver: ${driversMeta.find(d => String(d.driver_id) === String(selectedBus.id)?.replace('D-','') || String(d.driver_id) === String(selectedBus.driverId)).full_name}` : selectedBus.id || selectedBus.busId || selectedBus.driverId || 'Vehicle')}
                           </span>
                         </div>
-                        <h3 className="text-sm font-black text-gray-900 dark:text-gray-50 leading-tight">
-                          To {selectedBus.endLocation || selectedBus.destination || selectedBus.route_name || 'Terminal'}
+                        <h3 className="text-sm font-black text-white capitalize leading-tight max-w-[140px] truncate">
+                          {selectedBus.endLocation || selectedBus.destination || selectedBus.route_name ? `To ${selectedBus.endLocation || selectedBus.destination || selectedBus.route_name}` : 'To Terminal'}
                         </h3>
                       </div>
                       <div className="text-right">
@@ -1285,7 +1403,8 @@ const LiveTracking = () => {
 
                     {/* Action Button */}
                     <button
-                      onClick={(e) => {
+                      onPointerDown={(e) => {
+                        e.preventDefault();
                         e.stopPropagation();
                         navigate(`/bus/${encodeURIComponent(selectedBus.id || selectedBus.busId || selectedBus.driverId || 'dummy')}`);
                       }}

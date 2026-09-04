@@ -1,5 +1,5 @@
 const bcrypt = require("bcrypt");
-const Users = require("../../db/models/usersModel.js");
+const pool = require("../../db.js");
 const { formSchema } = require("@busmate/common");
 
 const registerUser = async (req, res) => {
@@ -7,12 +7,12 @@ const registerUser = async (req, res) => {
     const data = await formSchema.validate(req.body, { abortEarly: true });
 
     //check
-    const existing = await Users.query()
-      .where("email", data.email)
-      .orWhere("username", data.username)
-      .first();
+    const existing = await pool.query(
+      "SELECT id FROM users WHERE email = $1 OR username = $2",
+      [data.email, data.username]
+    );
 
-    if (existing) {
+    if (existing.rows.length > 0) {
       return res.status(409).json({ error: "User already exists" });
     }
 
@@ -20,11 +20,11 @@ const registerUser = async (req, res) => {
     const hashed = await bcrypt.hash(data.password, 10);
 
     //insert user
-    const newUser = await Users.query().insert({
-      username: data.username,
-      email: data.email,
-      password: hashed,
-    });
+    const insertRes = await pool.query(
+      "INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email",
+      [data.username, data.email, hashed]
+    );
+    const newUser = insertRes.rows[0];
 
     // 3. Establish Session (Instant Authorization)
     res.cookie('userId', newUser.id, { 

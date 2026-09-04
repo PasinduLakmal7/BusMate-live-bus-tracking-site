@@ -139,6 +139,8 @@ app.get('/buses/locations', async (req, res) => {
                 bl.latitude as lat, 
                 bl.longitude as lon, 
                 bl.speed, 
+                bl.heading,
+                bl.is_returning as "isReturning",
                 bl.recorded_at as ts,
                 r.route_number as "routeNumber",
                 r.route_id as "routeId",

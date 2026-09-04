@@ -4,6 +4,7 @@
   "workspaces": [
     "busmate-backend",
     "busmate-frontend",
+    "busmate-admin",
     "common"
   ],
   "version": "1.0.0",

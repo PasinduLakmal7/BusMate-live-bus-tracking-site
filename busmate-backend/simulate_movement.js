@@ -281,6 +281,11 @@ async function simulate(io = null) {
       const baseRealSpeedForUI = (bus.mps / 30) * 3.6; // Get original real speed back
       const speedKph = Math.max(25, Math.min(80, baseRealSpeedForUI + (Math.random() * 5)));
 
+      if (isNaN(lat) || isNaN(lon) || isNaN(speedKph) || isNaN(heading)) {
+        console.warn(`[SIM] Skipping invalid movement for bus ${bus.id} - calculated NaN values`);
+        return;
+      }
+
       await pool.query(
         'INSERT INTO bus_locations (bus_id, latitude, longitude, speed, recorded_at, heading, is_returning) VALUES ($1, $2, $3, $4, NOW(), $5, $6)',
         [bus.id, lat.toFixed(8), lon.toFixed(8), speedKph.toFixed(1), heading.toFixed(2), bus.isReturning || false]
@@ -299,6 +304,7 @@ async function simulate(io = null) {
           isReturning: bus.isReturning || false,
           ts: new Date().toISOString()
         };
+        io.emit('bus:location', payload);
         io.to('route:' + bus.routeId).emit('bus:location', payload);
         io.to('admin').emit('bus:location', payload);
       }

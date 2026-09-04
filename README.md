@@ -117,18 +117,21 @@ You need to start the backend and the desired frontend applications.
 cd busmate-backend
 npm run dev
 ```
+*(Runs on `http://localhost:4000`)*
 
 **Start the Passenger App:**
 ```bash
 cd busmate-frontend
 npm run dev
 ```
+*(Runs on `http://localhost:5173`)*
 
 **Start the Admin Dashboard:**
 ```bash
 cd busmate-admin
 npm run dev
 ```
+*(Runs on `http://localhost:5174`)*
 
 ---
 

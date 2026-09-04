@@ -179,45 +179,92 @@ const RoutePlanner = () => {
   }, [userLocation, isLoaded, location.state]);
 
 
+  const detectLocation = useCallback((isManual = false) => {
+    setLocationStatus('loading');
+    if (isManual) setCurrentAddress("Detecting current location...");
+
+    const applyLocation = (coords, accuracyLevel = 'high') => {
+      const newPos = { lat: coords.lat, lng: coords.lng };
+      setUserLocation(newPos);
+      setLocationStatus(accuracyLevel);
+      if (map) {
+        map.panTo(newPos);
+        map.setZoom(16);
+      }
+      if (window.google?.maps?.Geocoder) {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: newPos }, (results, status) => {
+          if (status === "OK" && results && results.length > 0) {
+            // Find cleanest address (skip raw plus codes)
+            const cleanResult = results.find(r => !r.formatted_address.includes('+') && !r.types.includes('plus_code')) || results[0];
+            let addr = cleanResult.formatted_address;
+            // Clean any leading plus code prefix (e.g. "QVVW+XJ7, Moratuwa" or "QFXJ+H8 Wattegama")
+            addr = addr.replace(/^[A-Z0-9]{2,8}\+[A-Z0-9]{2,5}[,\s]+/i, '');
+            setCurrentAddress(addr);
+          } else {
+            setCurrentAddress(`Coordinate: ${newPos.lat.toFixed(4)}, ${newPos.lng.toFixed(4)}`);
+          }
+        });
+      } else {
+        setCurrentAddress(`Coordinate: ${newPos.lat.toFixed(4)}, ${newPos.lng.toFixed(4)}`);
+      }
+    };
+
+    const fallbackToIPOrDefault = async () => {
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.latitude && data.longitude) {
+            applyLocation({ lat: data.latitude, lng: data.longitude }, 'low');
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("IP Geolocation fallback failed:", e);
+      }
+      // Default to Colombo / Moratuwa
+      applyLocation(defaultCenter, 'low');
+    };
+
+    if (!navigator.geolocation) {
+      fallbackToIPOrDefault();
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'high');
+      },
+      (errHigh) => {
+        console.warn("High accuracy geolocation failed, trying standard accuracy:", errHigh.message);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            applyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'low');
+          },
+          (errLow) => {
+            console.warn("Standard accuracy geolocation failed, using fallback:", errLow.message);
+            fallbackToIPOrDefault();
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }, [map]);
+
   useEffect(() => {
     const observer = new MutationObserver(() => {
       setIsDarkMode(document.documentElement.classList.contains('dark'));
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
-    let watchId;
-
-    const startTracking = (highAccuracy = true) => {
-      if (watchId) navigator.geolocation.clearWatch(watchId);
-
-      if (navigator.geolocation) {
-        watchId = navigator.geolocation.watchPosition(
-          (pos) => {
-            setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            setLocationStatus(highAccuracy ? 'high' : 'low');
-          },
-          (err) => {
-            console.error(`Geolocation error (highAccuracy=${highAccuracy}):`, err);
-            if (highAccuracy && (err.code === 3 || err.code === 1)) {
-              startTracking(false);
-            } else {
-              setLocationStatus('error');
-            }
-          },
-          { enableHighAccuracy: highAccuracy, timeout: highAccuracy ? 10000 : 20000, maximumAge: 0 }
-        );
-      } else {
-        setLocationStatus('error');
-      }
-    };
-
-    startTracking(true);
+    detectLocation(false);
 
     return () => {
       observer.disconnect();
-      if (watchId) navigator.geolocation.clearWatch(watchId);
     };
-  }, []);
+  }, [detectLocation]);
 
   const onMapLoad = useCallback((mapInstance) => {
     setMap(mapInstance);
@@ -368,46 +415,7 @@ const RoutePlanner = () => {
                             variant="ghost"
                             className="p-1.5 rounded-full text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-700"
                             title="Centre map on your location"
-                            onClick={() => {
-                              if (navigator.geolocation) {
-                                setLocationStatus('loading');
-                                setCurrentAddress("Detecting...");
-
-                                navigator.geolocation.getCurrentPosition(
-                                  (pos) => {
-                                    const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                                    setUserLocation(newPos);
-
-                                    // Map Centering
-                                    if (map) {
-                                      map.panTo(newPos);
-                                      map.setZoom(16);
-                                    }
-
-                                    // Reverse Geocode to update address input
-                                    const geocoder = new window.google.maps.Geocoder();
-                                    geocoder.geocode({ location: newPos }, (results, status) => {
-                                      if (status === "OK" && results[0]) {
-                                        setCurrentAddress(results[0].formatted_address);
-                                        setLocationStatus('high');
-                                      } else {
-                                        setCurrentAddress(`Coordinate: ${newPos.lat.toFixed(4)}, ${newPos.lng.toFixed(4)}`);
-                                        setLocationStatus('low');
-                                      }
-                                    });
-                                  },
-                                  (err) => {
-                                    console.error("Manual geolocation failed:", err);
-                                    alert("Could not detect your exact location. Please ensure location permissions are enabled.");
-                                    setLocationStatus('error');
-                                    setCurrentAddress("");
-                                  },
-                                  { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-                                );
-                              } else {
-                                alert("Geolocation is not supported by your browser.");
-                              }
-                            }}
+                            onClick={() => detectLocation(true)}
                           >
                             <Navigation className={`w-4 h-4 ${locationStatus === 'loading' ? 'animate-spin' : ''}`} />
                           </Button>
@@ -490,10 +498,10 @@ const RoutePlanner = () => {
                 <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                   {isFindingRoutes
                     ? 'Searching...'
-                    : suggestions.length > 0
-                      ? `Found ${suggestions.length} option${suggestions.length > 1 ? 's' : ''}`
-                      : transitSteps.length > 0
-                        ? `${transitSteps.length} step journey`
+                    : transitSteps.length > 0
+                      ? `${transitSteps.length} step journey`
+                      : suggestions.length > 0
+                        ? `Found ${suggestions.length} option${suggestions.length > 1 ? 's' : ''}`
                         : 'No routes found'}
                 </span>
               </h3>
@@ -503,7 +511,7 @@ const RoutePlanner = () => {
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
                   <p className="text-sm text-gray-500">Searching all Sri Lankan bus routes...</p>
                 </div>
-              ) : suggestions.length > 0 ? (
+              ) : suggestions.length > 0 && transitSteps.length === 0 ? (
                 <>
                   {/* IMPROVEMENT: Journey Summary Header for local DB results */}
                   {distance && (
@@ -670,12 +678,21 @@ const RoutePlanner = () => {
                                    e.stopPropagation();
                                    const directionFilter = step.transit?.arrival_stop?.name;
                                    const arrivalLoc = step.transit?.arrival_stop?.location;
+                                   const originLoc = idx === 0 
+                                     ? userLocation 
+                                     : transitSteps[idx - 1]?.transit?.arrival_stop?.location;
+                                   
+                                   const originLat = typeof originLoc?.lat === 'function' ? originLoc.lat() : originLoc?.lat;
+                                   const originLng = typeof originLoc?.lng === 'function' ? originLoc.lng() : originLoc?.lng;
+
                                    navigate('/live', { 
                                      state: { 
                                        autoStartRoute: routeNumber, 
                                        autoSetDirection: directionFilter,
                                        autoSetArrivalLat: typeof arrivalLoc?.lat === 'function' ? arrivalLoc.lat() : arrivalLoc?.lat,
                                        autoSetArrivalLng: typeof arrivalLoc?.lng === 'function' ? arrivalLoc.lng() : arrivalLoc?.lng,
+                                       autoSetOriginLat: originLat,
+                                       autoSetOriginLng: originLng,
                                        autoStartNavigation: true 
                                      } 
                                    });
